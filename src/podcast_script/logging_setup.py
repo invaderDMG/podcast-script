@@ -15,6 +15,13 @@ enforced separately in POD-015.
 """
 
 import logging
+from typing import Literal
+
+from rich.progress import Progress
+
+Verbosity = Literal["quiet", "normal", "verbose", "debug"]
+"""Verbosity selector accepted by :func:`configure`. The CLI flag plumbing
+that maps ``-q``/``-v``/``--debug`` onto these labels lands in POD-014."""
 
 # Built-in ``LogRecord`` attribute names — anything else on ``__dict__`` is an
 # ``extra=`` kwarg from the caller and gets rendered as a logfmt pair.
@@ -80,3 +87,12 @@ def _format_value(value: object) -> str:
         return s
     escaped = s.replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
+
+
+def configure(verbosity: Verbosity, progress: Progress | None) -> logging.Logger:
+    """Wire the ``podcast_script`` logger per ADR-0008.
+
+    Returns the configured logger so callers can pass it on; the function is
+    idempotent — re-calling it replaces handlers rather than stacking them.
+    """
+    raise NotImplementedError

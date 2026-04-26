@@ -14,7 +14,7 @@ import logging
 
 import pytest
 
-from podcast_script.logging_setup import LogfmtFormatter
+from podcast_script.logging_setup import LogfmtFormatter, Verbosity, configure
 
 
 def _record(level: int, msg: str = "", **extra: object) -> logging.LogRecord:
@@ -61,3 +61,42 @@ class TestLogfmtFormatter:
         line = LogfmtFormatter().format(_record(logging.ERROR, event="decode_error", cause=value))
 
         assert line == f"level=error event=decode_error cause={rendered}"
+
+
+@pytest.fixture
+def reset_logger() -> "logging.Logger":
+    """Hand back the ``podcast_script`` logger with no handlers attached.
+
+    ``configure`` mutates a process-global ``logging.Logger``; without this
+    fixture, handlers leak across tests and assertions become order-dependent.
+    """
+    logger = logging.getLogger("podcast_script")
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+    logger.setLevel(logging.NOTSET)
+    yield logger
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+    logger.setLevel(logging.NOTSET)
+
+
+class TestConfigure:
+    @pytest.mark.parametrize(
+        ("verbosity", "expected_level"),
+        [
+            ("quiet", logging.ERROR),
+            ("normal", logging.INFO),
+            ("verbose", logging.DEBUG),
+            ("debug", logging.DEBUG),
+        ],
+    )
+    def test_sets_logger_level_per_verbosity(
+        self,
+        reset_logger: logging.Logger,
+        verbosity: Verbosity,
+        expected_level: int,
+    ) -> None:
+        logger = configure(verbosity, progress=None)
+
+        assert logger.name == "podcast_script"
+        assert logger.level == expected_level

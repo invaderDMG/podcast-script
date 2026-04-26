@@ -107,7 +107,15 @@ def configure(verbosity: Verbosity, progress: Progress | None) -> logging.Logger
     idempotent — re-calling it replaces handlers rather than stacking them.
     """
     console = progress.console if progress is not None else Console(stderr=True)
-    handler = RichHandler(console=console)
+    handler = RichHandler(
+        console=console,
+        show_time=False,
+        show_level=False,
+        show_path=False,
+        markup=False,
+        rich_tracebacks=(verbosity == "debug"),
+    )
+    handler.setFormatter(LogfmtFormatter())
 
     logger = logging.getLogger(_LOGGER_NAME)
     for existing in list(logger.handlers):

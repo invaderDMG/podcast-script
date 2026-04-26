@@ -50,5 +50,24 @@ def atomic_write(path: Path, content: str) -> None:
         if not renamed and tmp_path is not None:
             tmp_path.unlink(missing_ok=True)
 
+    _fsync_directory_best_effort(path.parent)
+
     if prior_mode is not None:
         os.chmod(path, prior_mode)
+
+
+def _fsync_directory_best_effort(directory: Path) -> None:
+    """Flush ``directory``'s metadata so the preceding rename survives a
+    power loss. Best-effort: any ``OSError`` (e.g. on filesystems that don't
+    support directory fsync) is swallowed, mirroring the file-fsync policy
+    in ADR-0005 §Consequences.
+    """
+    try:
+        dir_fd = os.open(directory, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        with contextlib.suppress(OSError):
+            os.fsync(dir_fd)
+    finally:
+        os.close(dir_fd)

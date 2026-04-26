@@ -11,6 +11,7 @@ formatter and the wiring of ``RichHandler`` through ``Progress.console``.
 """
 
 import logging
+from collections.abc import Generator
 
 import pytest
 
@@ -64,7 +65,7 @@ class TestLogfmtFormatter:
 
 
 @pytest.fixture
-def reset_logger() -> "logging.Logger":
+def reset_logger() -> Generator[logging.Logger]:
     """Hand back the ``podcast_script`` logger with no handlers attached.
 
     ``configure`` mutates a process-global ``logging.Logger``; without this

@@ -23,6 +23,15 @@ Verbosity = Literal["quiet", "normal", "verbose", "debug"]
 """Verbosity selector accepted by :func:`configure`. The CLI flag plumbing
 that maps ``-q``/``-v``/``--debug`` onto these labels lands in POD-014."""
 
+_LEVEL_FOR_VERBOSITY: dict[Verbosity, int] = {
+    "quiet": logging.ERROR,
+    "normal": logging.INFO,
+    "verbose": logging.DEBUG,
+    "debug": logging.DEBUG,
+}
+
+_LOGGER_NAME = "podcast_script"
+
 # Built-in ``LogRecord`` attribute names — anything else on ``__dict__`` is an
 # ``extra=`` kwarg from the caller and gets rendered as a logfmt pair.
 _STD_RECORD_KEYS = frozenset(
@@ -95,4 +104,6 @@ def configure(verbosity: Verbosity, progress: Progress | None) -> logging.Logger
     Returns the configured logger so callers can pass it on; the function is
     idempotent — re-calling it replaces handlers rather than stacking them.
     """
-    raise NotImplementedError
+    logger = logging.getLogger(_LOGGER_NAME)
+    logger.setLevel(_LEVEL_FOR_VERBOSITY[verbosity])
+    return logger

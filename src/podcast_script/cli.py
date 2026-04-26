@@ -11,20 +11,32 @@ rejected with a "did you mean?" suggestion via Levenshtein distance ≤ 2
 (AC-US-1.5). Missing ``--lang`` (and, once POD-016 lands, no config
 fallback) is also a usage error (AC-US-4.3).
 
-The pipeline orchestrator itself lands in POD-008 (SP-2). For now,
-:func:`_run_pipeline` is a no-op so the CLI surface can be exercised
-end-to-end without the heavy ML stages.
+POD-008 wired :class:`~podcast_script.pipeline.Pipeline` behind
+:func:`_run_pipeline`; the cli is the composition root that hands real
+stages to the orchestrator (ADR-0002). Until POD-010 / POD-011 /
+POD-018-020 land, the stub stages defined in this module produce a
+placeholder Markdown body so the smoke path works end-to-end without
+the heavy ML deps.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import typer
 
 from .errors import PodcastScriptError, UsageError
 from .logging_setup import Verbosity, configure
+from .segment import Segment
+
+if TYPE_CHECKING:
+    import numpy as np
+    import numpy.typing as npt
+
+    from .backends.base import TranscribedSegment
+    from .render import TimestampFormat
 
 SUPPORTED_LANGS: tuple[str, ...] = ("es", "en", "pt", "fr", "de", "it", "ca", "eu")
 """The eight v1 ``--lang`` codes (SRS §1.7). Frozen for v1.0.0; expanding
@@ -145,6 +157,58 @@ def _resolve_verbosity(verbose: bool, quiet: bool, debug: bool) -> Verbosity:
     return "normal"
 
 
+class _StubBackend:
+    """Placeholder ``WhisperBackend`` until POD-018/019/020 land.
+
+    No model is loaded; ``transcribe`` returns nothing. The smoke-test
+    end-to-end pipeline therefore writes a body with no speech lines —
+    enough to exercise the orchestrator + decode + atomic write before
+    the real backends arrive in SP-3 / SP-4.
+    """
+
+    name = "stub"
+
+    def load(self, model: str, device: str) -> None:
+        del model, device
+
+    def transcribe(
+        self,
+        pcm: npt.NDArray[np.float32],
+        lang: str,
+        sample_rate: int = 16_000,
+    ) -> Iterable[TranscribedSegment]:
+        del pcm, lang, sample_rate
+        return ()
+
+
+class _StubSegmenter:
+    """Placeholder ``Segmenter`` until POD-010 lands.
+
+    Returns a single ``speech`` segment covering the full decoded
+    duration so the orchestrator's transcribe loop runs once and the
+    streaming-contract code path is exercised end-to-end.
+    """
+
+    def segment(self, pcm: npt.NDArray[np.float32]) -> list[Segment]:
+        duration_s = len(pcm) / 16_000
+        return [Segment(start=0.0, end=duration_s, label="speech")]
+
+
+def _stub_render(
+    segments: list[Segment],
+    transcripts: list[TranscribedSegment],
+    fmt: TimestampFormat,
+) -> str:
+    """Placeholder Markdown body until POD-011 lands.
+
+    Emits enough structure that AC-US-1.1 ("the tool writes ``episode.md``
+    next to the input and exits with code 0") holds at the smoke level;
+    the locked output shape (SRS §1.6) lands with POD-011.
+    """
+    del segments, transcripts
+    return f"# transcript (stub renderer; POD-011 ships the real shape)\n\nfmt={fmt}\n"
+
+
 def _run_pipeline(
     *,
     input_path: Path,
@@ -156,13 +220,31 @@ def _run_pipeline(
     force: bool,
     debug: bool,
 ) -> None:
-    """Pipeline placeholder. Wired in POD-008 (SP-2).
+    """Compose the pipeline and run it.
 
-    Kept as a typed seam so the CLI parses, validates, and dispatches today
-    without dragging the orchestrator's heavy imports (ADR-0011) into the
-    CLI surface tests.
+    The cli is the composition root (ADR-0002 §Decision step 4) — it
+    instantiates the concrete stages and hands them to :class:`Pipeline`.
+    Real stages plug in as their tasks land: ``Segmenter`` (POD-010),
+    ``render`` (POD-011), ``WhisperBackend`` + ``select_backend``
+    (POD-018/019/020). ``--force`` / ``--debug`` wiring lands in
+    POD-022/023 / POD-024 respectively; for POD-008 they're accepted but
+    inert beyond reaching the orchestrator.
     """
-    del input_path, output_path, lang, model, backend, device, force, debug
+    del backend, force, debug
+
+    from .decode import decode as decode_audio
+    from .pipeline import Pipeline
+
+    pipeline = Pipeline(
+        decode=decode_audio,
+        segmenter=_StubSegmenter(),
+        backend=_StubBackend(),
+        render=_stub_render,
+        model=model,
+        device=device,
+        lang=lang,
+    )
+    pipeline.run(input_path=input_path, output_path=output_path)
 
 
 @app.command(epilog=_EXIT_CODE_EPILOG)

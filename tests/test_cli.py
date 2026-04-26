@@ -141,12 +141,26 @@ class TestCliGrammarSurface:
     effects of these flags are wired in subsequent SP-1..SP-5 tasks. The
     point here is that the grammar is rejected/accepted as defined, not that
     each flag does its job yet.
+
+    The two flag-acceptance tests stub :func:`podcast_script.cli._run_pipeline`
+    to a no-op so they remain pure parser tests after POD-008 wired the real
+    Pipeline behind it (which would otherwise fail on the empty fixture file
+    with a decode error).
     """
 
-    def test_locked_short_flags_are_accepted(self, runner: CliRunner, tmp_path: Path) -> None:
+    def test_locked_short_flags_are_accepted(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         # SRS §9.1 / Q17 — ``-o``, ``-f``, ``-v``, ``-q`` are the only short
         # aliases. We just need the parser to accept them; downstream tasks
         # exercise the actual behaviour.
+        from podcast_script import cli as cli_module
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: None)
+
         input_file = _touch(tmp_path, "episode.mp3")
         output_file = input_file.with_suffix(".md")
         result = runner.invoke(
@@ -202,7 +216,16 @@ class TestCliGrammarSurface:
         assert "usage" in result.stdout.lower()
         assert "decode" in result.stdout.lower()
 
-    def test_long_only_flags_are_accepted(self, runner: CliRunner, tmp_path: Path) -> None:
+    def test_long_only_flags_are_accepted(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from podcast_script import cli as cli_module
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: None)
+
         input_file = _touch(tmp_path, "episode.mp3")
         result = runner.invoke(
             app,

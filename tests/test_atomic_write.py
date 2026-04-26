@@ -24,6 +24,21 @@ class _Boom(RuntimeError):
     """Sentinel raised by injected failures so tests can assert the leak path."""
 
 
+@pytest.fixture
+def replace_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Patch ``os.replace`` to raise :class:`_Boom`.
+
+    Shared by every test that exercises a mid-rename failure (AC-US-6.3,
+    NFR-5 negative, etc.). Extracted from a Rule-of-Three duplication
+    flagged in PR #7 review (suggestion #3).
+    """
+
+    def boom(_src: str | os.PathLike[str], _dst: str | os.PathLike[str]) -> None:
+        raise _Boom("simulated FS error during rename")
+
+    monkeypatch.setattr(os, "replace", boom)
+
+
 def test_atomic_write_writes_complete_content_to_target_NFR_5_success(
     tmp_path: Path,
 ) -> None:
@@ -40,24 +55,15 @@ def test_atomic_write_writes_complete_content_to_target_NFR_5_success(
 
 def test_atomic_write_preserves_prior_file_on_failure_AC_US_6_3(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    replace_raises: None,
 ) -> None:
     """AC-US-6.3 — if the rename fails after a `--force` run has begun, the
     pre-existing output file at ``path`` is preserved byte-for-byte and no
     stray ``.md.tmp`` remains in the target directory.
-
-    Failure is injected by patching ``os.replace`` so the temp file is
-    on disk but the promotion to ``path`` fails — the same window the ADR
-    mandates we recover from.
     """
     target = tmp_path / "episode.md"
     prior = "# previous transcript\n\nhand-edited paragraph kept across reruns.\n"
     target.write_text(prior, encoding="utf-8")
-
-    def boom(_src: str | os.PathLike[str], _dst: str | os.PathLike[str]) -> None:
-        raise _Boom("simulated FS error during rename")
-
-    monkeypatch.setattr(os, "replace", boom)
 
     with pytest.raises(_Boom):
         atomic_write(target, "fresh transcript that must not land\n")
@@ -70,18 +76,13 @@ def test_atomic_write_preserves_prior_file_on_failure_AC_US_6_3(
 
 def test_atomic_write_leaves_no_partial_file_on_failure_NFR_5_negative(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    replace_raises: None,
 ) -> None:
     """NFR-5 (failure path) — when no prior file exists and the rename
     fails, the resolved output path stays absent (no partial Markdown).
     """
     target = tmp_path / "episode.md"
     assert not target.exists()
-
-    def boom(_src: str | os.PathLike[str], _dst: str | os.PathLike[str]) -> None:
-        raise _Boom("simulated FS error during rename")
-
-    monkeypatch.setattr(os, "replace", boom)
 
     with pytest.raises(_Boom):
         atomic_write(target, "should never appear at target\n")

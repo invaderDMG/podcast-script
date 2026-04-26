@@ -27,7 +27,12 @@ from pathlib import Path
 import numpy as np
 import numpy.typing as npt
 
+from .errors import InputIOError
+
 
 def decode(input_path: Path, *, debug_dir: Path | None = None) -> npt.NDArray[np.float32]:
     """Decode ``input_path`` to mono 16 kHz float32 PCM via ``ffmpeg``."""
+    if not input_path.is_file():
+        raise InputIOError(f"input file not found: {input_path}")
+
     raise NotImplementedError

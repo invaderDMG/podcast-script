@@ -1,27 +1,28 @@
-# Project Plan — v0.4  (confidence: 92%)
+# Project Plan — v1.0  (confidence: 95%)
 
 ## Changelog
-- v0.4 (2026-04-26) — resolved Q10–Q13. Pre-SP-1 readiness = "just go" (Q10, kept default — tooling is maintainer's local responsibility, SP-1 uses any MP3 stand-in, SPK-1 in parallel). Risk-review policy = **review all 17 risks at every sprint planning (~10 min)** with the five high-priority entries (R-1/R-2/R-6/R-7/R-9) flagged as headline items (Q11 — multi-check: user ticked both the 5-entry subset AND the "all 17" superset; resolved by adopting the more inclusive scope). Velocity-refinement substitute confirmed = per-sprint `velocity_actual=N + cause` CHANGELOG line (Q12, kept default). Round 4 is a close-out tightening pass; declare v1.0 next iteration (Q13, kept default). Updated §10 with risk-review policy block; updated §11 ceremony table to fold the 10-minute all-17 risk scan into planning. Confidence climbs to 92% across the board: Team/cadence 90→92, DoR/DoD 85→90, Estimation scale 85→92, Task breakdown 85→92, Estimates 90→95, Velocity 85→92, Sprint comp 85→92, Roadmap 85→92, User-testing 85→92, Dependencies 85→92, Risks tech 90→95, Risks ops 85→92, Risks biz 85→92, Mitigation ownership 80→90, Ceremony 80→92.
-- v0.3 (2026-04-26) — resolved Q6–Q9: bulk-accepted seven story estimates as final v0.2 baseline (Q6, kept default — **dropped `(provisional)` markers** in §4.2 + §5); confirmed user-testing cadence self/dogfoot/public (Q7, kept default — expanded §8 into a self-contained phase table); ceremonies **lightened to planning + review only for SP-1..SP-3, retro added from SP-4 onward** (Q8, moved off recommendation — §11 rewritten + §4.3 velocity-refinement substitute added: per-sprint `velocity_actual=N` line in CHANGELOG); risk register grew from 11 → **17** entries (Q9, **all six candidates ticked including R-16 and R-17**) — added R-12 (large-v3 vs tiny output divergence), R-13 (macOS runner image bumps), R-14 (huggingface_hub API evolution), R-15 (LibriVox+CC0 sourcing fragility), R-16 (competing OSS tool adoption risk), R-17 (faster-whisper API shape change). Confidence bumps: Estimates 60→90, User-testing 30→85, Ceremony 30→80, Risks tech 75→90, Risks ops 50→85, Risks biz 60→85, Mitigation ownership 70→80, Task breakdown 80→85, Velocity 80→85, Sprint comp 80→85, Roadmap 80→85, Dependencies 80→85.
-- v0.2 (2026-04-26) — resolved Q1–Q5: sprint length **2 weeks** (Q1, default), velocity **8 pts/sprint** (Q2, default), SP-1 **thin-stub end-to-end** (Q3, default), DoD = **merged + CI matrix + smoke + AC + docs** (Q4, default), task ID convention = **`POD-NNN` zero-padded 3-digit** (Q5 — moved off recommendation; user picked Other). **Bulk-renamed every task ID `T-N` → `POD-NNN`** across §5/§6/§9/§10. **POD-012 deliberately retired** (no `T-12` was ever assigned in v0.1; gap preserved per "IDs never get reused" rule). Bumped confidence on Team/Cadence (70→90), DoR/DoD (50→85), Velocity (40→80), Sprint composition (60→80), Roadmap (65→80), Estimation scale (75→85), Task breakdown (70→80), Mitigation ownership (30→70 — every owner is the solo maintainer, which is trivially the answer for this project shape).
+- v1.0 (2026-04-26) — **finalized.** Resolved Q14 (nothing missing — kept default; freeze proceeds as drafted) and Q15 (**frozen at v1.0** — user moved off the recommendation; plan does not get re-versioned per sprint, sprint actuals + story status tracked only in `CHANGELOG.md` + GitHub Issues). Added §1.5 "Plan governance — frozen at v1.0" explicitly capturing the post-freeze policy. Stripped `## Open questions (this round)` per skill freeze convention; `## Resolved questions` retained as the audit trail (Q1..Q15 all on file). Per-area confidence bumped uniformly to 95% — every area is past its hard gate, every story has a final estimate, every sprint has a goal + deliverable, every risk has mitigation + owner + re-assess trigger. The plan is actionable: SP-1 can start week of 2026-04-27 from the §6 SP-1 backlog without further input.
+- v0.4 (2026-04-26) — resolved Q10–Q13. Pre-SP-1 readiness = "just go" (Q10, kept default). Risk-review policy = **review all 17 risks at every sprint planning (~10 min)** with the five high-priority entries (R-1/R-2/R-6/R-7/R-9) flagged as headline items (Q11 — multi-check resolved by adopting the more inclusive scope). Velocity-refinement substitute confirmed = per-sprint `velocity_actual=N + cause` CHANGELOG line (Q12, kept default). Round 4 was a close-out tightening pass (Q13, kept default); declared v1.0 next iteration.
+- v0.3 (2026-04-26) — resolved Q6–Q9: bulk-accepted seven story estimates as final v0.2 baseline (Q6, kept default — **dropped `(provisional)` markers** in §4.2 + §5); confirmed user-testing cadence self/dogfoot/public (Q7, kept default — expanded §8 into a self-contained phase table); ceremonies **lightened to planning + review only for SP-1..SP-3, retro added from SP-4 onward** (Q8, moved off recommendation — §11 rewritten + §4.3 velocity-refinement substitute added); risk register grew from 11 → **17** entries (Q9, **all six candidates ticked**) — added R-12, R-13, R-14, R-15, R-16, R-17.
+- v0.2 (2026-04-26) — resolved Q1–Q5: sprint length **2 weeks** (Q1, default), velocity **8 pts/sprint** (Q2, default), SP-1 **thin-stub end-to-end** (Q3, default), DoD = **merged + CI matrix + smoke + AC + docs** (Q4, default), task ID convention = **`POD-NNN` zero-padded 3-digit** (Q5 — moved off recommendation). **Bulk-renamed every task ID `T-N` → `POD-NNN`** across §5/§6/§9/§10. **POD-012 deliberately retired** (no `T-12` was ever assigned in v0.1; gap preserved per "IDs never get reused" rule).
 - v0.1 (2026-04-26) — initial draft seeded from `SRS.md` v1.0, `SYSTEM_DESIGN.md` v1.0 (17 Accepted ADRs), `PROJECT_BRIEF.md` v1.0. Decomposed US-1..US-7 into 40 tasks (T-1..T-40) using the §3.1 module layout as the structural backbone. Provisional Fibonacci estimates per story. 8 sprints drafted (SP-1..SP-8) with one testable deliverable per sprint, ordered by the architectural dependency chain (decode → segment → backend → progress → debug → polish). Risk register seeded from SRS §15 + SYSTEM_DESIGN §5; added solo-maintainer-specific operational risks. SPK-1 added for TF+MLX combined install validation (SRS Risk #5 / SYSTEM_DESIGN Risk #3, still open).
 
 ## Confidence by area
-- Team & cadence: 92%
-- Definition of Ready / Done: 90%
-- Estimation scale & calibration: 92%
-- Task breakdown: 92%
+- Team & cadence: 95%
+- Definition of Ready / Done: 95%
+- Estimation scale & calibration: 95%
+- Task breakdown: 95%
 - Estimates (Fibonacci): 95%
-- Velocity & capacity: 92%
-- Sprint composition: 92%
-- Release roadmap & deliverables: 92%
-- User-testing cadence: 92%
-- Dependencies & critical path: 92%
+- Velocity & capacity: 95%
+- Sprint composition: 95%
+- Release roadmap & deliverables: 95%
+- User-testing cadence: 95%
+- Dependencies & critical path: 95%
 - Risks: technical: 95%
-- Risks: operational: 92%
-- Risks: business: 92%
-- Mitigation ownership: 90%
-- Ceremony cadence & grooming: 92%
+- Risks: operational: 95%
+- Risks: business: 95%
+- Mitigation ownership: 95%
+- Ceremony cadence & grooming: 95%
 
 ## 1. Inputs & assumptions
 
@@ -50,6 +51,7 @@
 - **Ceremonies (lightened)**: planning + review only for SP-1..SP-3; retro added from SP-4 onward (Q8, resolved in v0.3).
 - **Risk-review policy**: review **all 17 risks** at every sprint planning (~10 min); five high-priority entries (R-1, R-2, R-6, R-7, R-9) are headline items (Q11, resolved in v0.4).
 - **Velocity-refinement substitute**: per-sprint `velocity_actual=N + cause-if-missed` line written to CHANGELOG at every sprint review (Q12, resolved in v0.4).
+- **Plan governance**: this file is **frozen at v1.0** (Q15, resolved in v1.0). See §1.5.
 
 ### 1.3 Working assumptions (challenge these)
 - **Solo dev capacity**: ~8 points/sprint on 2-week sprints, modeling part-time evening/weekend availability with ~0.4 effective focus factor. Forecast revised to actuals after SP-1.
@@ -65,6 +67,19 @@
 - **`POD-NNN`**: project-scoped task ID (Q5). Zero-padded 3-digit; globally numbered; retired IDs are not reused (e.g. POD-012 was retired in the v0.1 → v0.2 rename and stays unassigned).
 - **`velocity_actual=N`**: per-sprint logfmt-style line written to CHANGELOG at sprint review (Q8 + Q12 substitute) — captures completed points + a one-sentence cause if the forecast was missed by ≥ 2 pts.
 - **Headline risk**: a risk in the high-priority subset (R-1, R-2, R-6, R-7, R-9) that gets explicit attention at every sprint planning's risk review. All other risks are still scanned each planning per Q11 but only require action on their listed re-assess trigger.
+
+### 1.5 Plan governance — frozen at v1.0 (Q15 resolved)
+
+This plan is **frozen at v1.0** as of 2026-04-26. It does **not** get re-versioned per sprint review. Concretely:
+
+- **Sprint actuals** (`velocity_actual=N` + cause-if-missed) are written to `CHANGELOG.md` per Q12, never back-ported into §6 of this file.
+- **Story status** (Done / In-progress / Slipped / Carried-forward) is tracked in **GitHub Issues** keyed by `POD-NNN` task IDs. The §5 task list in this file remains the canonical *plan*, not the canonical *state*.
+- **Schedule slippage** does not trigger an in-place re-projection of §7 calendar dates. Calendar dates here are the original 2026-04-27 baseline projection; actual tag dates are recorded in `CHANGELOG.md` + git tags.
+- **Risk register changes** (a new R-N, a closed risk, a re-prioritization) live in `CHANGELOG.md` and any new ADR — not as edits to §10.
+
+A **new revision (`v2.0`)** is warranted only when a substantive scope change happens — e.g., a Must story is dropped, a sprint is added or removed, or the v1.0.0 release-trigger criteria from SRS §16.1 are renegotiated. Tactical adjustments inside the current scope (a story slips one sprint, an estimate proves wrong, a new low-priority risk surfaces) live in CHANGELOG and do not warrant a plan refresh.
+
+This convention matches the brief's "trunk-based, squash-merge by maintainer" workflow (brief §16) and the SRS's "v1.0.0 = first tagged release whose CI passes" rule (SRS §16.1) — both of which assume a plan that's settled at the start of execution rather than rewritten mid-flight.
 
 ## 2. Team & cadence
 
@@ -116,13 +131,13 @@ Fibonacci: **1, 2, 3, 5, 8, 13, 21**. Upper bound for a single committable story
 
 ### 4.3 Velocity forecast — resolved Q2
 - **Initial forecast**: 8 points/sprint. Source: 1 engineer × 0.4 effective focus (part-time evenings/weekends) × 10 working days × ~2 points/effective-day-of-actual-coding ≈ 8.
-- **Refinement policy**: yesterday's-weather after SP-1; switch to a 3-sprint rolling average after SP-3. Calendar dates in §7 re-projected each sprint review.
+- **Refinement policy**: yesterday's-weather after SP-1; switch to a 3-sprint rolling average after SP-3. Calendar dates in §7 re-projected each sprint review **into `CHANGELOG.md`, not into this file** (§1.5 plan-governance rule).
 - **Capacity caveat**: this forecast is for net coding capacity. Spikes (SPK-1) are **off-velocity** by design (ADR-0017 + skill convention).
 - **Velocity refinement during the no-retro period (SP-1..SP-3, per Q8)**: even without retros, "yesterday's-weather" forecasting still works mechanically — SP-2's forecast = SP-1's actual completed points. To preserve the qualitative lessons retros would normally capture, **every sprint review records a one-line `velocity_actual=N` entry in `CHANGELOG.md`** plus a one-sentence cause if the forecast was missed by ≥ 2 pts (Q12 confirmed). From SP-4 onward the retro re-introduces a fuller start/stop/continue note.
 
 ## 5. Task breakdown
 
-Convention: **globally-numbered `POD-NNN`**, zero-padded 3-digit (Q5 resolved). Sub-points (`1`, `2`, `3`) used for tasks; the parent story carries the canonical Fibonacci estimate (Q6 resolved — final, no longer provisional). Cross-cutting infrastructure tasks (POD-001..POD-005, POD-026..POD-040) live outside individual stories but are scheduled into specific sprints in §6. **Retired IDs stay retired** — POD-012 was deliberately not assigned in the v0.1 → v0.2 rename.
+Convention: **globally-numbered `POD-NNN`**, zero-padded 3-digit (Q5 resolved). Sub-points (`1`, `2`, `3`) used for tasks; the parent story carries the canonical Fibonacci estimate (Q6 resolved — final). Cross-cutting infrastructure tasks (POD-001..POD-005, POD-026..POD-040) live outside individual stories but are scheduled into specific sprints in §6. **Retired IDs stay retired** — POD-012 was deliberately not assigned in the v0.1 → v0.2 rename. **Per §1.5, story status is tracked in GitHub Issues, not edited into the headers below.**
 
 ### Cross-cutting infrastructure tasks (no single US home)
 
@@ -212,7 +227,7 @@ Convention: **globally-numbered `POD-NNN`**, zero-padded 3-digit (Q5 resolved). 
 
 - **POD-036** — `README.md` (English): install (`git clone` + `uv sync`), quickstart on `examples/sample.mp3`, output format example (SRS §1.6), model-size tradeoffs, accuracy caveats (EC-1/EC-7), exit-code table (NFR-9), logfmt event catalogue (NFR-10 + ADR-0012), 8-code lang table (SRS §1.7), observed-throughput section (SRS NFR-1 + Risk #7), **differentiator paragraph** (segment-then-transcribe + curated lang set + atomic-write contract — R-16 mitigation) (3 sub-pt) — maintainer
 - **POD-037** — `docs/ARCHITECTURE.md`: 4-bullet one-pager per SRS §16.2 (pipeline + backend Protocol + noise/silence rationale + atomic-write rationale) (1 sub-pt) — maintainer
-- **POD-038** — `CHANGELOG.md` (Keep-a-Changelog format) per brief §14; **per-sprint `velocity_actual=N` line at every sprint review** (Q8 + Q12 substitute) + **"regenerate examples/sample.md after large-v3 bumps" runbook entry** (R-12 mitigation) (1 sub-pt) — maintainer
+- **POD-038** — `CHANGELOG.md` (Keep-a-Changelog format) per brief §14; **per-sprint `velocity_actual=N` line at every sprint review** (Q8 + Q12 substitute) + **"regenerate examples/sample.md after large-v3 bumps" runbook entry** (R-12 mitigation). **Per §1.5, this is also the canonical record of sprint actuals + schedule slippage** (instead of editing PROJECT_PLAN.md) (1 sub-pt) — maintainer
 
 ### Release
 
@@ -299,7 +314,7 @@ Forecast velocity: **8 points/sprint** (Q2 resolved). Each sprint commits storie
 
 ## 7. Release roadmap
 
-Sprint-by-sprint timeline. **Calendar dates are projections, not commitments** — they assume SP-1 starts the week of 2026-04-27 and 2-week cadence holds. Re-project at every sprint review.
+Sprint-by-sprint timeline. **Calendar dates are projections, not commitments** — they assume SP-1 starts the week of 2026-04-27 and 2-week cadence holds. Per §1.5, slippage is recorded in `CHANGELOG.md`, not by editing this table.
 
 | Sprint | Dates (proj.)            | Milestone                                     | Deliverable                                                         | Testable for                            |
 |--------|--------------------------|-----------------------------------------------|---------------------------------------------------------------------|-----------------------------------------|
@@ -349,7 +364,7 @@ SP-1 (POD-001, POD-002, POD-003, POD-006, POD-007) → SP-2 (POD-008, POD-010, P
 
 Format: `R-N (category) — title` | Likelihood × Impact = Priority | Mitigation | Owner | Re-assess. **17 entries** after Q9.
 
-**Risk-review policy (Q11 resolved in v0.4):** all 17 risks are reviewed at every sprint planning, ~10 min total. The five **headline risks** (R-1, R-2, R-6, R-7, R-9) — the only ones with both Likelihood ≥ M and Impact ≥ M — get explicit attention every planning. The other 12 are scanned for status changes and only require action when their listed re-assess trigger fires (e.g. "on every Dependabot PR that bumps `huggingface_hub`").
+**Risk-review policy (Q11 resolved in v0.4):** all 17 risks are reviewed at every sprint planning, ~10 min total. The five **headline risks** (R-1, R-2, R-6, R-7, R-9) — the only ones with both Likelihood ≥ M and Impact ≥ M — get explicit attention every planning. The other 12 are scanned for status changes and only require action when their listed re-assess trigger fires (e.g. "on every Dependabot PR that bumps `huggingface_hub`"). Per §1.5, register edits (new R-N, closed R-N, re-prioritization) live in `CHANGELOG.md`, not by editing this section.
 
 ### 10.1 Technical (8)
 - **R-1 (Tech) — TF (via inaSpeechSegmenter) + MLX + faster-whisper combined install on Apple Silicon may conflict** *(SRS Risk #5, SYSTEM_DESIGN Risk #3, still open)* **— headline**
@@ -504,21 +519,7 @@ Lightened for solo maintainer. Q8 selected the "even lighter" option: **planning
 
 **Mid-sprint scope changes:** reject by default. Exception: a Must-blocking ADR question that surfaces during implementation — handle in a tactical patch sprint or absorb by descoping a Should story. Newly discovered work is added as a `POD-NNN` task with the next free ID and routed to a future sprint, not pulled into the current one without rebudgeting.
 
-## Open questions (this round)
-
-### Q14 — Final-pass: anything missing, off, or under-considered? (Meta)
-**Why pick the recommended option:** at 92% aggregate confidence, with §6 SP-1 fully ready to start Monday and the §10 risk register covering all real signals from the inputs, no specific gap is obvious. But this is the last cheap chance to surface a gut-level "wait, we forgot X" before the file freezes at v1.0. If something feels off, write it under Other.
-
-- [x] Nothing missing — proceed to v1.0 freeze (recommended)
-- [ ] Other: _____________  (e.g. "we never decided how the maintainer will publish a release announcement", "what if ffmpeg drops f32le support in a future version", "I want a `--dry-run` mode in v1")
-
-### Q15 — Plan lifecycle post-v1.0 freeze (Plan governance)
-**Why pick the recommended option:** the per-sprint `velocity_actual=N` line in CHANGELOG (Q12 confirmed) already requires per-sprint maintenance discipline. Extending that discipline to PROJECT_PLAN.md (mark stories Done as they complete; record sprint actuals next to forecasts; re-project §7 calendar after each sprint review) keeps the plan honest at ~5 min/review. The frozen variant avoids the maintenance but the plan becomes increasingly wrong as work happens — and at that point the sprint backlog table loses its value as a reference. The hybrid is half-measures: most of the cost without the value.
-
-- [x] Living: PROJECT_PLAN.md is updated at every sprint review — story status (Done/In-progress/Slipped/Carried-forward), sprint actuals next to forecasts, calendar re-projection in §7. Each sprint review bumps the version (recommended)
-- [ ] Frozen at v1.0: plan becomes a historical artifact at freeze time; actuals tracked only in GitHub Issues + CHANGELOG (low maintenance; plan goes stale)
-- [ ] Hybrid: freeze §1–§5 (foundation) but keep §6 sprint backlog + §7 roadmap + §10 risks living
-- [ ] Other: _____________
+**Plan governance reminder (per §1.5):** sprint actuals + story status + schedule slippage are recorded in `CHANGELOG.md` and GitHub Issues. This file is frozen at v1.0; further substantive scope changes warrant a `v2.0` revision, not in-place edits.
 
 ## Resolved questions
 
@@ -573,3 +574,11 @@ Lightened for solo maintainer. Q8 selected the "even lighter" option: **planning
 ### Q13 — Stop condition: ready to declare v1.0? (Meta) — resolved in v0.4
 **Selected:** One more round (round 4): tighten anything still TBD; declare v1.0 next iteration (kept default).
 **Touches:** procedural — drove this v0.4 close-out round; the next "go" produces v1.0 (final freeze).
+
+### Q14 — Final-pass: anything missing, off, or under-considered? (Meta) — resolved in v1.0
+**Selected:** Nothing missing — proceed to v1.0 freeze (kept default).
+**Touches:** procedural — green-lit the v0.4 → v1.0 freeze. No content additions triggered.
+
+### Q15 — Plan lifecycle post-v1.0 freeze (Plan governance) — resolved in v1.0
+**Selected:** Frozen at v1.0 — plan becomes a historical artifact at freeze time; actuals tracked only in GitHub Issues + CHANGELOG (user moved off the "Living" recommendation).
+**Touches:** §1.2 locked-in constraints (added plan-governance row), §1.5 (new subsection capturing the frozen-at-v1.0 policy and what counts as a v2.0-warranting change), §4.3 (added "re-projected … into `CHANGELOG.md`, not into this file"), §5 task-breakdown intro (added "Per §1.5, story status is tracked in GitHub Issues, not edited into the headers below"), POD-038 scope (added "this is also the canonical record of sprint actuals + schedule slippage"), §7 roadmap intro ("slippage is recorded in `CHANGELOG.md`, not by editing this table"), §10 risk register intro ("register edits live in CHANGELOG.md, not by editing this section"), §11 (added plan-governance reminder at the bottom).

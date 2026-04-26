@@ -134,3 +134,20 @@ def test_decode_does_not_create_debug_dir_when_unset(tmp_path: Path) -> None:
     decode(wav)
 
     assert list(tmp_path.iterdir()) == [wav]
+
+
+@_ffmpeg_required
+def test_decode_handles_path_with_spaces_and_non_ascii_EC_3(tmp_path: Path) -> None:
+    """EC-3 — input paths with spaces and non-ASCII characters MUST work
+    end-to-end. The list-arg form of :func:`subprocess.run` already handles
+    this on POSIX without additional quoting, but pinning it as a regression
+    test guards future refactors that might reach for shell=True or string
+    concatenation.
+    """
+    wav = tmp_path / "canción de prueba.wav"
+    frames = _write_silent_wav(wav, seconds=0.1)
+
+    pcm = decode(wav)
+
+    assert pcm.dtype == np.float32
+    assert abs(pcm.shape[0] - frames) <= 1

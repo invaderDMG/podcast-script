@@ -8,6 +8,7 @@ orchestrator (POD-008, SP-2) is the only intended caller.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import tempfile
 from pathlib import Path
@@ -23,28 +24,23 @@ def atomic_write(path: Path, content: str) -> None:
     temp file is removed and any prior file at ``path`` is untouched.
     """
     payload = content.encode("utf-8")
-
-    tmp = tempfile.NamedTemporaryFile(
-        mode="wb",
-        dir=path.parent,
-        prefix=path.stem + ".",
-        suffix=".md.tmp",
-        delete=False,
-    )
-    tmp_path = Path(tmp.name)
+    tmp_path: Path | None = None
     renamed = False
     try:
-        try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=path.parent,
+            prefix=path.stem + ".",
+            suffix=".md.tmp",
+            delete=False,
+        ) as tmp:
+            tmp_path = Path(tmp.name)
             tmp.write(payload)
             tmp.flush()
-            try:
+            with contextlib.suppress(OSError):
                 os.fsync(tmp.fileno())
-            except OSError:
-                pass
-        finally:
-            tmp.close()
         os.replace(tmp_path, path)
         renamed = True
     finally:
-        if not renamed:
+        if not renamed and tmp_path is not None:
             tmp_path.unlink(missing_ok=True)

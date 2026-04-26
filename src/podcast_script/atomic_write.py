@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import stat
 import tempfile
 from pathlib import Path
 
@@ -24,6 +25,10 @@ def atomic_write(path: Path, content: str) -> None:
     temp file is removed and any prior file at ``path`` is untouched.
     """
     payload = content.encode("utf-8")
+    prior_mode: int | None = None
+    with contextlib.suppress(FileNotFoundError):
+        prior_mode = stat.S_IMODE(path.stat().st_mode)
+
     tmp_path: Path | None = None
     renamed = False
     try:
@@ -44,3 +49,6 @@ def atomic_write(path: Path, content: str) -> None:
     finally:
         if not renamed and tmp_path is not None:
             tmp_path.unlink(missing_ok=True)
+
+    if prior_mode is not None:
+        os.chmod(path, prior_mode)

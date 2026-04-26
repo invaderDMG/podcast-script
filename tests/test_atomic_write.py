@@ -89,6 +89,25 @@ def test_atomic_write_leaves_no_partial_file_on_failure_NFR_5_negative(
     assert list(tmp_path.iterdir()) == []
 
 
+def test_atomic_write_preserves_prior_file_mode_on_force_rerun(
+    tmp_path: Path,
+) -> None:
+    """The mode of an existing target file is preserved across a `--force`
+    rerun. ``tempfile.NamedTemporaryFile`` creates the temp at 0o600; without
+    explicit restoration ``os.replace`` would silently demote a user's
+    ``chmod 644 episode.md`` after a successful overwrite. The orchestrator
+    relies on the helper to keep the user's chosen mode intact (per PR #7
+    review).
+    """
+    target = tmp_path / "episode.md"
+    target.write_text("prior\n", encoding="utf-8")
+    target.chmod(0o644)
+
+    atomic_write(target, "fresh transcript\n")
+
+    assert target.stat().st_mode & 0o777 == 0o644
+
+
 def test_atomic_write_creates_temp_in_target_directory_ADR_0005(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -12,7 +12,11 @@ rejected with a "did you mean?" suggestion via Levenshtein distance ≤ 2
 
 from __future__ import annotations
 
+import typer
+
 from .errors import UsageError
+
+app = typer.Typer()
 
 SUPPORTED_LANGS: tuple[str, ...] = ("es", "en", "pt", "fr", "de", "it", "ca", "eu")
 """The eight v1 ``--lang`` codes (SRS §1.7). Frozen for v1.0.0; expanding

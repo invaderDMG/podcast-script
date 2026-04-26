@@ -7,10 +7,24 @@ and ADR-0006 exception → ``typer.Exit`` translation.
 
 from __future__ import annotations
 
-import pytest
+from pathlib import Path
 
-from podcast_script.cli import SUPPORTED_LANGS, validate_lang
+import pytest
+from typer.testing import CliRunner
+
+from podcast_script.cli import SUPPORTED_LANGS, app, validate_lang
 from podcast_script.errors import UsageError
+
+
+@pytest.fixture()
+def runner() -> CliRunner:
+    return CliRunner()
+
+
+def _touch(tmp_path: Path, name: str) -> Path:
+    p = tmp_path / name
+    p.write_bytes(b"")
+    return p
 
 
 class TestValidateLang:
@@ -73,3 +87,108 @@ class TestValidateLang:
         # (Q11 deliberately scoped to a tested set, not a lookup table).
         with pytest.raises(UsageError):
             validate_lang("ES")
+
+
+class TestCliMissingLang:
+    """AC-US-4.3 — no ``--lang`` flag and (in POD-006) no config layer yet."""
+
+    def test_missing_lang_exits_with_code_2(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        input_file = _touch(tmp_path, "episode.mp3")
+        result = runner.invoke(app, [str(input_file)])
+        assert result.exit_code == 2
+
+    def test_missing_lang_message_states_required_and_lists_codes(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        input_file = _touch(tmp_path, "episode.mp3")
+        result = runner.invoke(app, [str(input_file)])
+        stderr = result.stderr
+        assert "--lang" in stderr
+        assert "required" in stderr.lower()
+        for code in SUPPORTED_LANGS:
+            assert code in stderr, f"missing supported code {code!r} from stderr: {stderr!r}"
+
+
+class TestCliLangValidationSurface:
+    """AC-US-1.5 wired through the typer surface (not just the pure validator)."""
+
+    def test_unknown_lang_exits_with_code_2(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        input_file = _touch(tmp_path, "episode.mp3")
+        result = runner.invoke(app, [str(input_file), "--lang", "ja"])
+        assert result.exit_code == 2
+
+    def test_unknown_lang_message_has_did_you_mean_when_close(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        input_file = _touch(tmp_path, "episode.mp3")
+        result = runner.invoke(app, [str(input_file), "--lang", "ess"])
+        assert result.exit_code == 2
+        assert "did you mean `es`" in result.stderr
+
+    def test_unknown_lang_emits_logfmt_event_usage_error(
+        self, runner: CliRunner, tmp_path: pytest.TempPathFactory
+    ) -> None:
+        # ADR-0006 + ADR-0008: the CLI catch-and-translate logs the
+        # exception's ``event`` token so operators can grep one fixed key.
+        input_file = _touch(tmp_path, "episode.mp3")  # type: ignore[arg-type]
+        result = runner.invoke(app, [str(input_file), "--lang", "zzzzz"])
+        assert "event=usage_error" in result.stderr
+        assert "level=error" in result.stderr
+
+
+class TestCliGrammarSurface:
+    """SRS §9.1 grammar — POD-006 locks the *parser* surface; pipeline-level
+    effects of these flags are wired in subsequent SP-1..SP-5 tasks. The
+    point here is that the grammar is rejected/accepted as defined, not that
+    each flag does its job yet.
+    """
+
+    def test_locked_short_flags_are_accepted(
+        self, runner: CliRunner, tmp_path: pytest.TempPathFactory
+    ) -> None:
+        # SRS §9.1 / Q17 — ``-o``, ``-f``, ``-v``, ``-q`` are the only short
+        # aliases. We just need the parser to accept them; downstream tasks
+        # exercise the actual behaviour.
+        input_file = _touch(tmp_path, "episode.mp3")  # type: ignore[arg-type]
+        output_file = input_file.with_suffix(".md")
+        result = runner.invoke(
+            app,
+            [str(input_file), "--lang", "es", "-o", str(output_file), "-f", "-v"],
+        )
+        assert result.exit_code == 0, f"expected 0 got {result.exit_code}; stderr={result.stderr!r}"
+
+    def test_unknown_short_flag_for_lang_is_rejected(
+        self, runner: CliRunner, tmp_path: pytest.TempPathFactory
+    ) -> None:
+        # SRS §9.1 / Q17 — ``-l`` is *not* an alias for ``--lang``; only
+        # the four high-traffic options have shorts.
+        input_file = _touch(tmp_path, "episode.mp3")  # type: ignore[arg-type]
+        result = runner.invoke(app, [str(input_file), "-l", "es"])
+        assert result.exit_code != 0
+
+    def test_long_only_flags_are_accepted(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        input_file = _touch(tmp_path, "episode.mp3")
+        result = runner.invoke(
+            app,
+            [
+                str(input_file),
+                "--lang",
+                "es",
+                "--model",
+                "tiny",
+                "--backend",
+                "faster-whisper",
+                "--device",
+                "cpu",
+                "--debug",
+            ],
+        )
+        assert result.exit_code == 0, f"stderr={result.stderr!r}"
+
+

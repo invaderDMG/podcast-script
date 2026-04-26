@@ -37,3 +37,10 @@ class TestLogfmtFormatter:
         line = LogfmtFormatter().format(_record(logging.INFO, event="startup"))
 
         assert line == "level=info event=startup"
+
+    def test_appends_extras_after_event_in_insertion_order(self) -> None:
+        line = LogfmtFormatter().format(
+            _record(logging.INFO, event="model_load_done", model="tiny", duration_wall_s=1.5),
+        )
+
+        assert line == "level=info event=model_load_done model=tiny duration_wall_s=1.5"

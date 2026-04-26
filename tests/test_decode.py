@@ -25,11 +25,16 @@ _TARGET_SAMPLE_RATE = 16_000
 
 _ffmpeg_required = pytest.mark.skipif(
     shutil.which("ffmpeg") is None,
-    reason="ffmpeg not on PATH (Tier-1 decoder tests need a real ffmpeg)",
+    reason="ffmpeg not on PATH (Tier-3-style decoder tests need a real ffmpeg)",
 )
 
 
-def _write_silent_wav(path: Path, *, seconds: float = 0.25, sample_rate: int = 16_000) -> int:
+def _write_silent_wav(
+    path: Path,
+    *,
+    seconds: float = 0.25,
+    sample_rate: int = _TARGET_SAMPLE_RATE,
+) -> int:
     """Write a mono 16-bit PCM WAV of ``seconds`` of silence; return frame count."""
     frames = int(seconds * sample_rate)
     with wave.open(str(path), "wb") as w:
@@ -67,13 +72,13 @@ def test_decode_raises_input_io_error_when_input_unreadable_AC_US_1_4(
     f.write_bytes(b"\x00")
     real_access = os.access
 
-    def fake_access(path: object, mode: int, *args: object, **kwargs: object) -> bool:
+    def fake_access(path: str | os.PathLike[str], mode: int) -> bool:
         # Only flip R_OK on our target input file. Leave shutil.which's
         # F_OK | X_OK probes for ffmpeg untouched, otherwise the
         # ffmpeg-on-PATH guard would fire first and mask this test.
-        if mode == os.R_OK and os.fspath(path) == str(f):  # type: ignore[arg-type]
+        if mode == os.R_OK and os.fspath(path) == str(f):
             return False
-        return real_access(path, mode, *args, **kwargs)  # type: ignore[arg-type]
+        return real_access(path, mode)
 
     monkeypatch.setattr(os, "access", fake_access)
 
@@ -154,7 +159,7 @@ def test_decode_writes_commands_txt_when_debug_dir_given_AC_US_7_1(tmp_path: Pat
     assert "ffmpeg" in captured
     assert str(wav) in captured
     # Canonical ADR-0016 markers must all appear in the captured argv:
-    for token in ("-f f32le", "-ar 16000", "-ac 1", "-i"):
+    for token in ("-f f32le", f"-ar {_TARGET_SAMPLE_RATE}", "-ac 1", "-i"):
         assert token in captured, f"missing canonical token {token!r} in commands.txt"
 
 

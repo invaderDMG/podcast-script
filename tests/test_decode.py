@@ -65,21 +65,24 @@ def test_decode_raises_input_io_error_when_input_unreadable_AC_US_1_4(
     that branch falls through to ffmpeg and surfaces as DecodeError
     (exit 4) — wrong exit code for a permission problem.
 
-    Monkeypatching ``os.access`` keeps this a Tier-1 unit test (no real
-    chmod, no real ffmpeg dependency).
+    Monkeypatching both ``shutil.which`` and ``os.access`` keeps this a
+    true Tier-1 unit test: no real chmod, no real ffmpeg installation
+    needed. Without the ``shutil.which`` fake the decoder's ffmpeg-on-PATH
+    guard would raise UsageError on any box lacking ffmpeg, masking the
+    InputIOError this test is supposed to pin.
     """
     f = tmp_path / "ep.mp3"
     f.write_bytes(b"\x00")
     real_access = os.access
 
     def fake_access(path: str | os.PathLike[str], mode: int) -> bool:
-        # Only flip R_OK on our target input file. Leave shutil.which's
-        # F_OK | X_OK probes for ffmpeg untouched, otherwise the
-        # ffmpeg-on-PATH guard would fire first and mask this test.
+        # Only flip R_OK on our target input file. Other os.access calls
+        # (e.g. inside Path.is_file()) must continue to reflect reality.
         if mode == os.R_OK and os.fspath(path) == str(f):
             return False
         return real_access(path, mode)
 
+    monkeypatch.setattr(shutil, "which", lambda _name: "/fake/ffmpeg")
     monkeypatch.setattr(os, "access", fake_access)
 
     with pytest.raises(InputIOError) as exc_info:

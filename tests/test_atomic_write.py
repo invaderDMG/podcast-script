@@ -10,7 +10,9 @@ silently drop the atomicity guarantee.
 from __future__ import annotations
 
 import os
+import tempfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -85,3 +87,35 @@ def test_atomic_write_leaves_no_partial_file_on_failure_NFR_5_negative(
 
     assert not target.exists()
     assert list(tmp_path.iterdir()) == []
+
+
+def test_atomic_write_creates_temp_in_target_directory_ADR_0005(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ADR-0005 — the temp file MUST be created in ``path.parent`` (so the
+    rename stays on the same filesystem and remains atomic on POSIX), and
+    its name MUST embed ``path.stem`` + the ``.md.tmp`` suffix so a stray
+    temp after ``kill -9`` is recognizable to humans.
+
+    Captured via a wrapper around ``tempfile.NamedTemporaryFile`` so the
+    assertion is on the kwargs the helper passes, not on observable file
+    layout (the temp is unlinked on success or failure, leaving nothing
+    to inspect after the call).
+    """
+    captured: dict[str, Any] = {}
+    real_named_temp = tempfile.NamedTemporaryFile
+
+    def spy(*args: Any, **kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return real_named_temp(*args, **kwargs)
+
+    monkeypatch.setattr(tempfile, "NamedTemporaryFile", spy)
+
+    target = tmp_path / "episode.md"
+    atomic_write(target, "ok\n")
+
+    assert captured["dir"] == target.parent
+    assert captured["prefix"] == "episode."
+    assert captured["suffix"] == ".md.tmp"
+    assert captured["delete"] is False

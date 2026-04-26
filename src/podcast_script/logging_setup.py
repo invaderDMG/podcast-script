@@ -110,6 +110,9 @@ def configure(verbosity: Verbosity, progress: Progress | None) -> logging.Logger
     handler = RichHandler(console=console)
 
     logger = logging.getLogger(_LOGGER_NAME)
+    for existing in list(logger.handlers):
+        if isinstance(existing, RichHandler):
+            logger.removeHandler(existing)
     logger.addHandler(handler)
     logger.setLevel(_LEVEL_FOR_VERBOSITY[verbosity])
     return logger

@@ -135,6 +135,18 @@ class TestConfigure:
         assert len(rich_handlers) == 1
         assert logger.level == logging.DEBUG
 
+    def test_does_not_propagate_to_root(
+        self,
+        reset_logger: logging.Logger,
+    ) -> None:
+        """NFR-10: prevent double-emission through a root handler that's not
+        logfmt — e.g. ``logging.basicConfig()`` from a library, pytest
+        ``--log-cli``, or a host process configuring its own logging before
+        importing podcast_script."""
+        logger = configure("normal", progress=None)
+
+        assert logger.propagate is False
+
     def test_handler_disables_rich_chrome_and_uses_logfmt_formatter(
         self,
         reset_logger: logging.Logger,

@@ -123,4 +123,5 @@ def configure(verbosity: Verbosity, progress: Progress | None) -> logging.Logger
             logger.removeHandler(existing)
     logger.addHandler(handler)
     logger.setLevel(_LEVEL_FOR_VERBOSITY[verbosity])
+    logger.propagate = False
     return logger

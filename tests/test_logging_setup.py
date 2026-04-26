@@ -134,3 +134,37 @@ class TestConfigure:
         rich_handlers = [h for h in logger.handlers if isinstance(h, RichHandler)]
         assert len(rich_handlers) == 1
         assert logger.level == logging.DEBUG
+
+    def test_handler_disables_rich_chrome_and_uses_logfmt_formatter(
+        self,
+        reset_logger: logging.Logger,
+    ) -> None:
+        """ADR-0008 #2-3: Rich is the rendering channel only — show_time/level/path
+        are off (logfmt owns those slots) and ``markup=False`` keeps Rich from
+        eating ``[brackets]`` inside logfmt values."""
+        logger = configure("normal", progress=None)
+
+        (handler,) = (h for h in logger.handlers if isinstance(h, RichHandler))
+        assert handler._log_render.show_time is False
+        assert handler._log_render.show_level is False
+        assert handler._log_render.show_path is False
+        assert handler.markup is False
+        assert isinstance(handler.formatter, LogfmtFormatter)
+
+    @pytest.mark.parametrize(
+        ("verbosity", "expected"),
+        [("quiet", False), ("normal", False), ("verbose", False), ("debug", True)],
+    )
+    def test_rich_tracebacks_only_under_debug(
+        self,
+        reset_logger: logging.Logger,
+        verbosity: Verbosity,
+        expected: bool,
+    ) -> None:
+        """ADR-0008 #6: under ``--debug``, RichHandler renders styled tracebacks;
+        on every other verbosity, exceptions go through the plain CLI catch
+        path so the error log line stays a single logfmt entry (ADR-0006)."""
+        logger = configure(verbosity, progress=None)
+
+        (handler,) = (h for h in logger.handlers if isinstance(h, RichHandler))
+        assert handler.rich_tracebacks is expected

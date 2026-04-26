@@ -23,12 +23,27 @@ AC-US-7.1.
 from __future__ import annotations
 
 import shutil
+import subprocess
 from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
 
 from .errors import InputIOError, UsageError
+
+# Canonical post-input ffmpeg argv (ADR-0016): raw little-endian float32 mono
+# 16 kHz on stdout, banner suppressed, only true errors on stderr. The full
+# argv prepends ``[ffmpeg_bin, "-i", str(input_path)]``; the leading binary
+# path is resolved at call time via ``shutil.which`` so a missing ffmpeg
+# fails as a UsageError rather than an internal FileNotFoundError.
+_FFMPEG_ARGS_TAIL: tuple[str, ...] = (
+    "-f", "f32le",
+    "-ar", "16000",
+    "-ac", "1",
+    "-hide_banner",
+    "-loglevel", "error",
+    "-",
+)
 
 
 def decode(input_path: Path, *, debug_dir: Path | None = None) -> npt.NDArray[np.float32]:
@@ -40,4 +55,6 @@ def decode(input_path: Path, *, debug_dir: Path | None = None) -> npt.NDArray[np
     if not input_path.is_file():
         raise InputIOError(f"input file not found: {input_path}")
 
-    raise NotImplementedError
+    argv: list[str] = [ffmpeg_bin, "-i", str(input_path), *_FFMPEG_ARGS_TAIL]
+    completed = subprocess.run(argv, check=False, capture_output=True)
+    return np.frombuffer(completed.stdout, dtype=np.float32)

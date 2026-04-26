@@ -14,6 +14,8 @@ import logging
 from collections.abc import Generator
 
 import pytest
+from rich.logging import RichHandler
+from rich.progress import Progress
 
 from podcast_script.logging_setup import LogfmtFormatter, Verbosity, configure
 
@@ -101,3 +103,23 @@ class TestConfigure:
 
         assert logger.name == "podcast_script"
         assert logger.level == expected_level
+
+    def test_uses_stderr_console_when_no_progress(
+        self,
+        reset_logger: logging.Logger,
+    ) -> None:
+        logger = configure("normal", progress=None)
+
+        (handler,) = (h for h in logger.handlers if isinstance(h, RichHandler))
+        assert handler.console.stderr is True
+
+    def test_reuses_progress_console_when_progress_passed(
+        self,
+        reset_logger: logging.Logger,
+    ) -> None:
+        progress = Progress()
+
+        logger = configure("normal", progress=progress)
+
+        (handler,) = (h for h in logger.handlers if isinstance(h, RichHandler))
+        assert handler.console is progress.console

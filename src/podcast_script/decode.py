@@ -22,16 +22,21 @@ AC-US-7.1.
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
 
-from .errors import InputIOError
+from .errors import InputIOError, UsageError
 
 
 def decode(input_path: Path, *, debug_dir: Path | None = None) -> npt.NDArray[np.float32]:
     """Decode ``input_path`` to mono 16 kHz float32 PCM via ``ffmpeg``."""
+    ffmpeg_bin = shutil.which("ffmpeg")
+    if ffmpeg_bin is None:
+        raise UsageError("ffmpeg not found on PATH; see README install steps")
+
     if not input_path.is_file():
         raise InputIOError(f"input file not found: {input_path}")
 

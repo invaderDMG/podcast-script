@@ -99,3 +99,38 @@ def test_decode_raises_decode_error_on_ffmpeg_failure_AC_US_1_3(tmp_path: Path) 
     with pytest.raises(DecodeError) as exc_info:
         decode(not_audio)
     assert str(not_audio) in str(exc_info.value)
+
+
+@_ffmpeg_required
+def test_decode_writes_commands_txt_when_debug_dir_given_AC_US_7_1(tmp_path: Path) -> None:
+    """AC-US-7.1 — under ``--debug``, the executed ffmpeg argv is captured to
+    ``commands.txt`` next to the decoded artifacts so the operator can replay
+    the exact invocation. POD-024 (SP-6) wires the full ``--debug`` directory;
+    POD-007 ships only the ``commands.txt`` seam.
+    """
+    wav = tmp_path / "silence.wav"
+    _write_silent_wav(wav, seconds=0.1)
+    debug_dir = tmp_path / "ep.debug"
+
+    decode(wav, debug_dir=debug_dir)
+
+    captured = (debug_dir / "commands.txt").read_text(encoding="utf-8")
+    assert "ffmpeg" in captured
+    assert str(wav) in captured
+    # Canonical ADR-0016 markers must all appear in the captured argv:
+    for token in ("-f f32le", "-ar 16000", "-ac 1", "-i"):
+        assert token in captured, f"missing canonical token {token!r} in commands.txt"
+
+
+@_ffmpeg_required
+def test_decode_does_not_create_debug_dir_when_unset(tmp_path: Path) -> None:
+    """When ``debug_dir`` is ``None`` (default), the decoder must not create
+    sibling directories — POD-024 will own ``--debug`` lifecycle, and an
+    eager mkdir here would surface as confusing leftovers from non-debug
+    runs."""
+    wav = tmp_path / "silence.wav"
+    _write_silent_wav(wav, seconds=0.1)
+
+    decode(wav)
+
+    assert list(tmp_path.iterdir()) == [wav]

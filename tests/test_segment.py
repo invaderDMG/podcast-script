@@ -108,6 +108,19 @@ def test_normalize_unknown_label_raises_model_error() -> None:
         _normalize_to_segments(raw, total_duration_s=1.0)
 
 
+def test_normalize_overlapping_segments_raises_model_error() -> None:
+    """``inaSpeechSegmenter``'s frame-classifier produces non-overlapping
+    segments by design; if the engine ever returns overlapping regions,
+    that's the same library-drift signal as an unknown label (R-14 /
+    R-17). Loud-fail with :class:`ModelError` rather than silently
+    clamp — a corrupted segmentation is upstream of every downstream
+    invariant (NFR-3 / NFR-4) and should surface immediately.
+    """
+    raw = [("speech", 0.0, 5.0), ("music", 3.0, 7.0)]
+    with pytest.raises(ModelError, match="overlapping"):
+        _normalize_to_segments(raw, total_duration_s=10.0)
+
+
 def test_normalize_no_gap_when_segments_already_cover_full_duration() -> None:
     """When raw already covers ``[0, total_duration_s]`` end-to-end, no
     silence padding is inserted (contiguity is preserved).
@@ -212,6 +225,28 @@ def test_engine_built_lazily_once_and_reused() -> None:
     segmenter.segment(pcm)
     assert segmenter.import_calls == 1  # unchanged — engine is cached
     assert segmenter.engine_runs == 2
+
+
+def test_segment_module_does_not_eagerly_import_inaspeechsegmenter() -> None:
+    """ADR-0011: ``segment.py`` MUST NOT import ``inaSpeechSegmenter`` at
+    module top — that would defeat the cold-start budget for ``--help``
+    and the validation paths, and would surface install conflicts before
+    any user-actionable context is logged.
+
+    Companion regression to ``test_engine_built_lazily_once_and_reused``:
+    the latter verifies the *class-level* lazy boundary via the override
+    seam, but would still pass if a future edit moved the import to the
+    module top. This test guards the *module-level* boundary.
+    """
+    import importlib
+    import sys
+
+    sys.modules.pop("podcast_script.segment", None)
+    sys.modules.pop("inaSpeechSegmenter", None)
+
+    importlib.import_module("podcast_script.segment")
+
+    assert "inaSpeechSegmenter" not in sys.modules
 
 
 # ---------------------------------------------------------------------------

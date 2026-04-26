@@ -16,12 +16,29 @@ enforce.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol, cast
 
 import numpy as np
 import numpy.typing as npt
 
 from .errors import ModelError
+
+if TYPE_CHECKING:
+
+    class _InaEngine(Protocol):
+        """Structural contract for the ``inaSpeechSegmenter`` engine.
+
+        Defined under ``TYPE_CHECKING`` so it documents the engine surface
+        without importing the heavy lib (ADR-0011) — the body is a
+        ``...`` stub at runtime.
+        """
+
+        def segment_with_signal(
+            self,
+            signal: npt.NDArray[np.float32],
+            sample_rate: int,
+        ) -> list[tuple[str, float, float]]: ...
+
 
 SegmentLabel = Literal["speech", "music", "noise", "silence"]
 
@@ -94,6 +111,12 @@ def _normalize_to_segments(
             raise ModelError(
                 f"inaSpeechSegmenter emitted an unknown label '{label}'; "
                 "this is likely a library upgrade — pin or update the mapping."
+            )
+        if start < cursor:
+            raise ModelError(
+                f"inaSpeechSegmenter emitted overlapping segments "
+                f"(start={start}s < previous end={cursor}s); "
+                "this is upstream of NFR-3 / NFR-4 — pin or investigate the lib."
             )
         if start > cursor:
             out.append(Segment(cursor, start, "silence"))
@@ -187,5 +210,9 @@ class InaSpeechSegmenter:
         """
         # ``inaSpeechSegmenter`` consumes a (signal, sample_rate) pair via
         # its internal media reader; returns a list of (label, start, end).
-        result = engine.segment_with_signal(pcm, self._sample_rate)  # type: ignore[attr-defined]
+        # Cast through the ``_InaEngine`` Protocol (see top of module) so
+        # the structural contract is documented without forcing the heavy
+        # lib's type onto the override seam.
+        real_engine = cast("_InaEngine", engine)
+        result = real_engine.segment_with_signal(pcm, self._sample_rate)
         return [(label, float(start), float(end)) for label, start, end in result]

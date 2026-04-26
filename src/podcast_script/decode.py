@@ -22,6 +22,7 @@ AC-US-7.1.
 
 from __future__ import annotations
 
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -56,6 +57,10 @@ def decode(input_path: Path, *, debug_dir: Path | None = None) -> npt.NDArray[np
         raise InputIOError(f"input file not found: {input_path}")
 
     argv: list[str] = [ffmpeg_bin, "-i", str(input_path), *_FFMPEG_ARGS_TAIL]
+    if debug_dir is not None:
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        (debug_dir / "commands.txt").write_text(shlex.join(argv) + "\n", encoding="utf-8")
+
     completed = subprocess.run(argv, check=False, capture_output=True)
     if completed.returncode != 0:
         stderr = completed.stderr.decode("utf-8", errors="replace").strip()

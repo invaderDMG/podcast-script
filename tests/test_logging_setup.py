@@ -12,6 +12,8 @@ formatter and the wiring of ``RichHandler`` through ``Progress.console``.
 
 import logging
 
+import pytest
+
 from podcast_script.logging_setup import LogfmtFormatter
 
 
@@ -44,3 +46,20 @@ class TestLogfmtFormatter:
         )
 
         assert line == "level=info event=model_load_done model=tiny duration_wall_s=1.5"
+
+    @pytest.mark.parametrize(
+        ("value", "rendered"),
+        [
+            ("ffmpeg returned 1", '"ffmpeg returned 1"'),
+            ("a=b", '"a=b"'),
+            ('he said "hi"', '"he said \\"hi\\""'),
+            ("", '""'),
+        ],
+        ids=["whitespace", "equals", "embedded-quote", "empty-string"],
+    )
+    def test_quotes_values_with_whitespace_equals_or_quote(
+        self, value: str, rendered: str
+    ) -> None:
+        line = LogfmtFormatter().format(_record(logging.ERROR, event="decode_error", cause=value))
+
+        assert line == f"level=error event=decode_error cause={rendered}"

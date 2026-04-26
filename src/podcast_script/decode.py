@@ -29,7 +29,7 @@ from pathlib import Path
 import numpy as np
 import numpy.typing as npt
 
-from .errors import InputIOError, UsageError
+from .errors import DecodeError, InputIOError, UsageError
 
 # Canonical post-input ffmpeg argv (ADR-0016): raw little-endian float32 mono
 # 16 kHz on stdout, banner suppressed, only true errors on stderr. The full
@@ -57,4 +57,10 @@ def decode(input_path: Path, *, debug_dir: Path | None = None) -> npt.NDArray[np
 
     argv: list[str] = [ffmpeg_bin, "-i", str(input_path), *_FFMPEG_ARGS_TAIL]
     completed = subprocess.run(argv, check=False, capture_output=True)
+    if completed.returncode != 0:
+        stderr = completed.stderr.decode("utf-8", errors="replace").strip()
+        suffix = f": {stderr}" if stderr else ""
+        raise DecodeError(
+            f"ffmpeg failed (exit {completed.returncode}) decoding {input_path}{suffix}"
+        )
     return np.frombuffer(completed.stdout, dtype=np.float32)

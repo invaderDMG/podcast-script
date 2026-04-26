@@ -10,6 +10,7 @@ silently drop the atomicity guarantee.
 from __future__ import annotations
 
 import os
+import stat
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -87,6 +88,34 @@ def test_atomic_write_leaves_no_partial_file_on_failure_NFR_5_negative(
 
     assert not target.exists()
     assert list(tmp_path.iterdir()) == []
+
+
+def test_atomic_write_fsyncs_parent_directory_after_replace_ADR_0005(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ADR-0005 (extended) — after a successful ``os.replace``, the parent
+    directory's metadata is ``fsync``-ed best-effort so the rename itself
+    is durable across a power loss. NFR-5 is unaffected (the rollback would
+    be to the prior file or to no file — never partial), but the parent-dir
+    fsync is defense-in-depth from PR #7 review (suggestion #2).
+    """
+    real_fsync = os.fsync
+    fsynced_kinds: list[str] = []
+
+    def spy(fd: int) -> None:
+        kind = "dir" if stat.S_ISDIR(os.fstat(fd).st_mode) else "file"
+        fsynced_kinds.append(kind)
+        real_fsync(fd)
+
+    monkeypatch.setattr(os, "fsync", spy)
+
+    target = tmp_path / "episode.md"
+    atomic_write(target, "ok\n")
+
+    assert "dir" in fsynced_kinds, (
+        f"expected at least one fsync on the parent directory; got {fsynced_kinds!r}"
+    )
 
 
 def test_atomic_write_preserves_prior_file_mode_on_force_rerun(

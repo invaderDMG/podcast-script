@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 
 from podcast_script.decode import decode
-from podcast_script.errors import InputIOError, UsageError
+from podcast_script.errors import DecodeError, InputIOError, UsageError
 
 _TARGET_SAMPLE_RATE = 16_000
 
@@ -82,3 +82,20 @@ def test_decode_returns_float32_mono_16khz_pcm_ADR_0016(tmp_path: Path) -> None:
     # ffmpeg resampling has a small transient on the boundary; allow ±1 frame slack.
     assert abs(pcm.shape[0] - frames) <= 1
     assert np.all(pcm == 0.0)
+
+
+@_ffmpeg_required
+def test_decode_raises_decode_error_on_ffmpeg_failure_AC_US_1_3(tmp_path: Path) -> None:
+    """AC-US-1.3 / UC-1 E5 / EC-10 — input ``ffmpeg`` cannot decode → :class:`DecodeError`.
+
+    A ``.mp3``-named text file passes the input-existence guard but ffmpeg
+    refuses to demux it, exiting non-zero. The error must surface as
+    DecodeError (exit 4) and the message must name the input path so the
+    operator can identify the offending file from the stderr line alone.
+    """
+    not_audio = tmp_path / "not-an-audio.mp3"
+    not_audio.write_text("definitely not audio bytes\n", encoding="utf-8")
+
+    with pytest.raises(DecodeError) as exc_info:
+        decode(not_audio)
+    assert str(not_audio) in str(exc_info.value)

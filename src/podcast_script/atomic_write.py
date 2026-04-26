@@ -32,14 +32,19 @@ def atomic_write(path: Path, content: str) -> None:
         delete=False,
     )
     tmp_path = Path(tmp.name)
+    renamed = False
     try:
-        tmp.write(payload)
-        tmp.flush()
         try:
-            os.fsync(tmp.fileno())
-        except OSError:
-            pass
+            tmp.write(payload)
+            tmp.flush()
+            try:
+                os.fsync(tmp.fileno())
+            except OSError:
+                pass
+        finally:
+            tmp.close()
+        os.replace(tmp_path, path)
+        renamed = True
     finally:
-        tmp.close()
-
-    os.replace(tmp_path, path)
+        if not renamed:
+            tmp_path.unlink(missing_ok=True)

@@ -123,3 +123,14 @@ class TestConfigure:
 
         (handler,) = (h for h in logger.handlers if isinstance(h, RichHandler))
         assert handler.console is progress.console
+
+    def test_is_idempotent_across_repeated_calls(
+        self,
+        reset_logger: logging.Logger,
+    ) -> None:
+        configure("normal", progress=None)
+        logger = configure("verbose", progress=None)
+
+        rich_handlers = [h for h in logger.handlers if isinstance(h, RichHandler)]
+        assert len(rich_handlers) == 1
+        assert logger.level == logging.DEBUG

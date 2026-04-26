@@ -12,8 +12,6 @@ formatter and the wiring of ``RichHandler`` through ``Progress.console``.
 
 import logging
 
-import pytest
-
 from podcast_script.logging_setup import LogfmtFormatter
 
 

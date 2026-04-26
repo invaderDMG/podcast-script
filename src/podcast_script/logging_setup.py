@@ -18,7 +18,15 @@ import logging
 
 
 class LogfmtFormatter(logging.Formatter):
-    """Render a ``LogRecord`` as a single logfmt line."""
+    """Render a ``LogRecord`` as a single logfmt line.
+
+    Output shape: ``level=<lvl> event=<token> <key>=<value> ...``. ``level``
+    is always first; ``event`` (if present as an ``extra`` attribute on the
+    record) is always second so operators can grep one fixed position.
+    """
 
     def format(self, record: logging.LogRecord) -> str:
-        raise NotImplementedError
+        parts = [f"level={record.levelname.lower()}"]
+        if hasattr(record, "event"):
+            parts.append(f"event={record.event}")
+        return " ".join(parts)

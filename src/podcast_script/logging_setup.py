@@ -17,6 +17,8 @@ enforced separately in POD-015.
 import logging
 from typing import Literal
 
+from rich.console import Console
+from rich.logging import RichHandler
 from rich.progress import Progress
 
 Verbosity = Literal["quiet", "normal", "verbose", "debug"]
@@ -104,6 +106,10 @@ def configure(verbosity: Verbosity, progress: Progress | None) -> logging.Logger
     Returns the configured logger so callers can pass it on; the function is
     idempotent — re-calling it replaces handlers rather than stacking them.
     """
+    console = progress.console if progress is not None else Console(stderr=True)
+    handler = RichHandler(console=console)
+
     logger = logging.getLogger(_LOGGER_NAME)
+    logger.addHandler(handler)
     logger.setLevel(_LEVEL_FOR_VERBOSITY[verbosity])
     return logger

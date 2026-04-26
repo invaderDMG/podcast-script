@@ -11,12 +11,32 @@ the EC-3 spaces+non-ASCII path requirement.
 from __future__ import annotations
 
 import shutil
+import wave
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from podcast_script.decode import decode
 from podcast_script.errors import InputIOError, UsageError
+
+_TARGET_SAMPLE_RATE = 16_000
+
+_ffmpeg_required = pytest.mark.skipif(
+    shutil.which("ffmpeg") is None,
+    reason="ffmpeg not on PATH (Tier-1 decoder tests need a real ffmpeg)",
+)
+
+
+def _write_silent_wav(path: Path, *, seconds: float = 0.25, sample_rate: int = 16_000) -> int:
+    """Write a mono 16-bit PCM WAV of ``seconds`` of silence; return frame count."""
+    frames = int(seconds * sample_rate)
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sample_rate)
+        w.writeframes(b"\x00\x00" * frames)
+    return frames
 
 
 def test_decode_raises_input_io_error_when_input_missing_AC_US_1_4(tmp_path: Path) -> None:
@@ -45,3 +65,20 @@ def test_decode_raises_usage_error_when_ffmpeg_not_on_path_UC_1_E4(
     with pytest.raises(UsageError) as exc_info:
         decode(fake_input)
     assert "ffmpeg" in str(exc_info.value)
+
+
+@_ffmpeg_required
+def test_decode_returns_float32_mono_16khz_pcm_ADR_0016(tmp_path: Path) -> None:
+    """ADR-0016 — successful decode returns ``NDArray[float32]`` whose length
+    matches input duration × 16 kHz, mono. Silence in → silence out (all zeros).
+    """
+    wav = tmp_path / "silence.wav"
+    frames = _write_silent_wav(wav, seconds=0.25)
+
+    pcm = decode(wav)
+
+    assert pcm.dtype == np.float32
+    assert pcm.ndim == 1
+    # ffmpeg resampling has a small transient on the boundary; allow ±1 frame slack.
+    assert abs(pcm.shape[0] - frames) <= 1
+    assert np.all(pcm == 0.0)

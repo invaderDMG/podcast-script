@@ -57,9 +57,7 @@ class TestLogfmtFormatter:
         ],
         ids=["whitespace", "equals", "embedded-quote", "empty-string"],
     )
-    def test_quotes_values_with_whitespace_equals_or_quote(
-        self, value: str, rendered: str
-    ) -> None:
+    def test_quotes_values_with_whitespace_equals_or_quote(self, value: str, rendered: str) -> None:
         line = LogfmtFormatter().format(_record(logging.ERROR, event="decode_error", cause=value))
 
         assert line == f"level=error event=decode_error cause={rendered}"

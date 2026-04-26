@@ -58,9 +58,25 @@ class LogfmtFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         parts = [f"level={record.levelname.lower()}"]
         if hasattr(record, "event"):
-            parts.append(f"event={record.event}")
+            parts.append(f"event={_format_value(record.event)}")
         for key, value in record.__dict__.items():
             if key in _STD_RECORD_KEYS or key == "event":
                 continue
-            parts.append(f"{key}={value}")
+            parts.append(f"{key}={_format_value(value)}")
         return " ".join(parts)
+
+
+def _format_value(value: object) -> str:
+    """Render ``value`` as a logfmt fragment.
+
+    Bare when the string has no whitespace, ``=``, or ``"``. Otherwise
+    wrapped in double quotes, with ``\\`` and ``"`` backslash-escaped.
+    Empty strings are rendered as ``""`` (an unquoted empty would be
+    indistinguishable from a missing value to a downstream parser).
+    """
+    s = str(value)
+    needs_quoting = not s or any(ch in s for ch in (" ", "\t", "\n", "=", '"'))
+    if not needs_quoting:
+        return s
+    escaped = s.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'

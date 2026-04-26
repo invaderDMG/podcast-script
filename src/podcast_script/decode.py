@@ -10,8 +10,8 @@ Errors map to the typed-exception hierarchy in :mod:`.errors` (ADR-0006)
 so the CLI alone is responsible for translating to ``typer.Exit(code)``:
 
 - ``ffmpeg`` not on ``PATH`` → :class:`UsageError` (exit 2, UC-1 E4).
-- Input path missing or not a file → :class:`InputIOError` (exit 3,
-  AC-US-1.4 / UC-1 E1).
+- Input path missing, not a file, or unreadable → :class:`InputIOError`
+  (exit 3, AC-US-1.4 / UC-1 E1).
 - ``ffmpeg`` exits non-zero → :class:`DecodeError` (exit 4, AC-US-1.3 /
   UC-1 E5 / EC-10).
 
@@ -22,6 +22,7 @@ AC-US-7.1.
 
 from __future__ import annotations
 
+import os
 import shlex
 import shutil
 import subprocess
@@ -59,6 +60,8 @@ def decode(input_path: Path, *, debug_dir: Path | None = None) -> npt.NDArray[np
 
     if not input_path.is_file():
         raise InputIOError(f"input file not found: {input_path}")
+    if not os.access(input_path, os.R_OK):
+        raise InputIOError(f"input file not readable: {input_path}")
 
     argv: list[str] = [ffmpeg_bin, "-i", str(input_path), *_FFMPEG_ARGS_TAIL]
     if debug_dir is not None:

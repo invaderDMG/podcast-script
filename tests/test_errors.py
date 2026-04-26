@@ -20,7 +20,7 @@ from podcast_script.errors import (
 @pytest.mark.parametrize(
     ("exc_cls", "expected_exit_code", "expected_event"),
     [
-        (PodcastScriptError, 1, "error"),
+        (PodcastScriptError, 1, "internal_error"),
         (UsageError, 2, "usage_error"),
         (InputIOError, 3, "input_io_error"),
         (DecodeError, 4, "decode_error"),
@@ -49,12 +49,14 @@ def test_base_derives_from_exception() -> None:
     assert issubclass(PodcastScriptError, Exception)
 
 
-def test_attrs_are_class_level_not_instance_only() -> None:
-    """exit_code / event must resolve on the class, not just on instances —
-    callers (CLI translator) inspect them on caught objects, but tests +
-    docs read them off the class. ADR-0006 names them as class attrs."""
+def test_subclasses_declare_their_own_overrides() -> None:
+    """Each subclass must define its own ``exit_code`` and ``event`` rather
+    than inherit the catch-all defaults from ``PodcastScriptError``. Without
+    this, a forgotten override would silently fall back to exit 1 /
+    ``internal_error`` and ship as a SemVer-major contract break."""
     for cls in (UsageError, DecodeError, OutputExistsError):
-        assert "exit_code" in cls.__dict__ or any("exit_code" in c.__dict__ for c in cls.__mro__)
+        assert "exit_code" in cls.__dict__
+        assert "event" in cls.__dict__
 
 
 def test_instances_carry_message_and_attrs() -> None:

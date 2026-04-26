@@ -16,7 +16,7 @@ class PodcastScriptError(Exception):
     """
 
     exit_code: int = 1
-    event: str = "error"
+    event: str = "internal_error"
 
 
 class UsageError(PodcastScriptError):

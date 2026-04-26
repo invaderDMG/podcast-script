@@ -38,11 +38,15 @@ from .errors import DecodeError, InputIOError, UsageError
 # path is resolved at call time via ``shutil.which`` so a missing ffmpeg
 # fails as a UsageError rather than an internal FileNotFoundError.
 _FFMPEG_ARGS_TAIL: tuple[str, ...] = (
-    "-f", "f32le",
-    "-ar", "16000",
-    "-ac", "1",
+    "-f",
+    "f32le",
+    "-ar",
+    "16000",
+    "-ac",
+    "1",
     "-hide_banner",
-    "-loglevel", "error",
+    "-loglevel",
+    "error",
     "-",
 )
 

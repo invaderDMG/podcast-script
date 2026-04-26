@@ -70,7 +70,7 @@ def test_decode_raises_usage_error_when_ffmpeg_not_on_path_UC_1_E4(
 @_ffmpeg_required
 def test_decode_returns_float32_mono_16khz_pcm_ADR_0016(tmp_path: Path) -> None:
     """ADR-0016 — successful decode returns ``NDArray[float32]`` whose length
-    matches input duration × 16 kHz, mono. Silence in → silence out (all zeros).
+    matches input duration * 16 kHz, mono. Silence in -> silence out (all zeros).
     """
     wav = tmp_path / "silence.wav"
     frames = _write_silent_wav(wav, seconds=0.25)

@@ -9,12 +9,16 @@ silently drop the atomicity guarantee.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
 
-from podcast_script import atomic_write as atomic_write_module
 from podcast_script.atomic_write import atomic_write
+
+
+class _Boom(RuntimeError):
+    """Sentinel raised by injected failures so tests can assert the leak path."""
 
 
 def test_atomic_write_writes_complete_content_to_target_NFR_5_success(
@@ -29,3 +33,55 @@ def test_atomic_write_writes_complete_content_to_target_NFR_5_success(
     atomic_write(target, payload)
 
     assert target.read_text(encoding="utf-8") == payload
+
+
+def test_atomic_write_preserves_prior_file_on_failure_AC_US_6_3(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AC-US-6.3 — if the rename fails after a `--force` run has begun, the
+    pre-existing output file at ``path`` is preserved byte-for-byte and no
+    stray ``.md.tmp`` remains in the target directory.
+
+    Failure is injected by patching ``os.replace`` so the temp file is
+    on disk but the promotion to ``path`` fails — the same window the ADR
+    mandates we recover from.
+    """
+    target = tmp_path / "episode.md"
+    prior = "# previous transcript\n\nhand-edited paragraph kept across reruns.\n"
+    target.write_text(prior, encoding="utf-8")
+
+    def boom(_src: str | os.PathLike[str], _dst: str | os.PathLike[str]) -> None:
+        raise _Boom("simulated FS error during rename")
+
+    monkeypatch.setattr(os, "replace", boom)
+
+    with pytest.raises(_Boom):
+        atomic_write(target, "fresh transcript that must not land\n")
+
+    assert target.read_text(encoding="utf-8") == prior
+    assert [p.name for p in tmp_path.iterdir()] == [target.name], (
+        "no .md.tmp should remain after a cleaned-up failure"
+    )
+
+
+def test_atomic_write_leaves_no_partial_file_on_failure_NFR_5_negative(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """NFR-5 (failure path) — when no prior file exists and the rename
+    fails, the resolved output path stays absent (no partial Markdown).
+    """
+    target = tmp_path / "episode.md"
+    assert not target.exists()
+
+    def boom(_src: str | os.PathLike[str], _dst: str | os.PathLike[str]) -> None:
+        raise _Boom("simulated FS error during rename")
+
+    monkeypatch.setattr(os, "replace", boom)
+
+    with pytest.raises(_Boom):
+        atomic_write(target, "should never appear at target\n")
+
+    assert not target.exists()
+    assert list(tmp_path.iterdir()) == []

@@ -47,11 +47,11 @@ class TestValidateLang:
     @pytest.mark.parametrize(
         ("typo", "expected_suggestion"),
         [
-            ("ess", "es"),  # distance 1 (insertion)
-            ("eng", "en"),  # distance 1
-            ("eus", "eu"),  # distance 1
-            ("dee", "de"),  # distance 1
-            ("itt", "it"),  # distance 1
+            ("ess", "es"),  # distance 1 (insertion); unambiguous
+            ("eng", "en"),  # distance 1; unambiguous
+            ("frr", "fr"),  # distance 1; unambiguous
+            ("dee", "de"),  # distance 1; unambiguous
+            ("itt", "it"),  # distance 1; unambiguous
         ],
     )
     def test_close_typo_suggests_intended_code(self, typo: str, expected_suggestion: str) -> None:
@@ -59,6 +59,14 @@ class TestValidateLang:
             validate_lang(typo)
         message = str(exc_info.value)
         assert f"did you mean `{expected_suggestion}`" in message
+
+    def test_equidistant_ties_break_by_supported_set_order(self) -> None:
+        # "eus" is distance 1 from both "es" (delete 'u') and "eu"
+        # (delete 's'). Without a semantic tie-breaker, we pick the first
+        # of SUPPORTED_LANGS so the message is deterministic.
+        with pytest.raises(UsageError) as exc_info:
+            validate_lang("eus")
+        assert "did you mean `es`" in str(exc_info.value)
 
     def test_uppercased_code_is_rejected_as_unknown(self) -> None:
         # SRS §1.7 lists lowercase codes; case-folding is not part of v1

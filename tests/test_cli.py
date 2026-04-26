@@ -16,7 +16,7 @@ from podcast_script.cli import SUPPORTED_LANGS, app, validate_lang
 from podcast_script.errors import UsageError
 
 
-@pytest.fixture()
+@pytest.fixture
 def runner() -> CliRunner:
     return CliRunner()
 
@@ -92,9 +92,7 @@ class TestValidateLang:
 class TestCliMissingLang:
     """AC-US-4.3 — no ``--lang`` flag and (in POD-006) no config layer yet."""
 
-    def test_missing_lang_exits_with_code_2(
-        self, runner: CliRunner, tmp_path: Path
-    ) -> None:
+    def test_missing_lang_exits_with_code_2(self, runner: CliRunner, tmp_path: Path) -> None:
         input_file = _touch(tmp_path, "episode.mp3")
         result = runner.invoke(app, [str(input_file)])
         assert result.exit_code == 2
@@ -114,9 +112,7 @@ class TestCliMissingLang:
 class TestCliLangValidationSurface:
     """AC-US-1.5 wired through the typer surface (not just the pure validator)."""
 
-    def test_unknown_lang_exits_with_code_2(
-        self, runner: CliRunner, tmp_path: Path
-    ) -> None:
+    def test_unknown_lang_exits_with_code_2(self, runner: CliRunner, tmp_path: Path) -> None:
         input_file = _touch(tmp_path, "episode.mp3")
         result = runner.invoke(app, [str(input_file), "--lang", "ja"])
         assert result.exit_code == 2
@@ -130,11 +126,11 @@ class TestCliLangValidationSurface:
         assert "did you mean `es`" in result.stderr
 
     def test_unknown_lang_emits_logfmt_event_usage_error(
-        self, runner: CliRunner, tmp_path: pytest.TempPathFactory
+        self, runner: CliRunner, tmp_path: Path
     ) -> None:
         # ADR-0006 + ADR-0008: the CLI catch-and-translate logs the
         # exception's ``event`` token so operators can grep one fixed key.
-        input_file = _touch(tmp_path, "episode.mp3")  # type: ignore[arg-type]
+        input_file = _touch(tmp_path, "episode.mp3")
         result = runner.invoke(app, [str(input_file), "--lang", "zzzzz"])
         assert "event=usage_error" in result.stderr
         assert "level=error" in result.stderr
@@ -147,13 +143,11 @@ class TestCliGrammarSurface:
     each flag does its job yet.
     """
 
-    def test_locked_short_flags_are_accepted(
-        self, runner: CliRunner, tmp_path: pytest.TempPathFactory
-    ) -> None:
+    def test_locked_short_flags_are_accepted(self, runner: CliRunner, tmp_path: Path) -> None:
         # SRS §9.1 / Q17 — ``-o``, ``-f``, ``-v``, ``-q`` are the only short
         # aliases. We just need the parser to accept them; downstream tasks
         # exercise the actual behaviour.
-        input_file = _touch(tmp_path, "episode.mp3")  # type: ignore[arg-type]
+        input_file = _touch(tmp_path, "episode.mp3")
         output_file = input_file.with_suffix(".md")
         result = runner.invoke(
             app,
@@ -162,17 +156,15 @@ class TestCliGrammarSurface:
         assert result.exit_code == 0, f"expected 0 got {result.exit_code}; stderr={result.stderr!r}"
 
     def test_unknown_short_flag_for_lang_is_rejected(
-        self, runner: CliRunner, tmp_path: pytest.TempPathFactory
+        self, runner: CliRunner, tmp_path: Path
     ) -> None:
         # SRS §9.1 / Q17 — ``-l`` is *not* an alias for ``--lang``; only
         # the four high-traffic options have shorts.
-        input_file = _touch(tmp_path, "episode.mp3")  # type: ignore[arg-type]
+        input_file = _touch(tmp_path, "episode.mp3")
         result = runner.invoke(app, [str(input_file), "-l", "es"])
         assert result.exit_code != 0
 
-    def test_long_only_flags_are_accepted(
-        self, runner: CliRunner, tmp_path: Path
-    ) -> None:
+    def test_long_only_flags_are_accepted(self, runner: CliRunner, tmp_path: Path) -> None:
         input_file = _touch(tmp_path, "episode.mp3")
         result = runner.invoke(
             app,
@@ -190,5 +182,3 @@ class TestCliGrammarSurface:
             ],
         )
         assert result.exit_code == 0, f"stderr={result.stderr!r}"
-
-

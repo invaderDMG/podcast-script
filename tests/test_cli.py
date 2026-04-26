@@ -164,6 +164,29 @@ class TestCliGrammarSurface:
         result = runner.invoke(app, [str(input_file), "-l", "es"])
         assert result.exit_code != 0
 
+    def test_help_lists_locked_grammar_surface(self, runner: CliRunner) -> None:
+        # SRS §9.1 + Q17 lock the public CLI grammar for v1.0.0. This test
+        # is the regression net: a typer upgrade that quietly drops or
+        # renames a flag, or removes a short alias, should fail here.
+        result = runner.invoke(app, ["--help"])
+        assert result.exit_code == 0
+        for long_flag in (
+            "--lang",
+            "--output",
+            "--force",
+            "--model",
+            "--backend",
+            "--device",
+            "--verbose",
+            "--quiet",
+            "--debug",
+        ):
+            assert long_flag in result.stdout, f"missing {long_flag} from --help"
+        for short_alias in ("-o", "-f", "-v", "-q"):
+            assert short_alias in result.stdout, f"missing short alias {short_alias} from --help"
+        for code in SUPPORTED_LANGS:
+            assert code in result.stdout, f"missing supported lang code {code!r} from --help"
+
     def test_help_includes_nfr9_exit_code_table(self, runner: CliRunner) -> None:
         # SRS §9.1 (line 430) requires --help to list "every flag, the eight
         # supported --lang codes, AND the documented exit-code table (NFR-9)".

@@ -164,6 +164,21 @@ class TestCliGrammarSurface:
         result = runner.invoke(app, [str(input_file), "-l", "es"])
         assert result.exit_code != 0
 
+    def test_help_includes_nfr9_exit_code_table(self, runner: CliRunner) -> None:
+        # SRS §9.1 (line 430) requires --help to list "every flag, the eight
+        # supported --lang codes, AND the documented exit-code table (NFR-9)".
+        # The flags + lang codes already render via typer; this asserts the
+        # exit-code table is also present so v1.0.0 ships §9.1-compliant.
+        result = runner.invoke(app, ["--help"])
+        assert result.exit_code == 0
+        assert "Exit codes" in result.stdout
+        for code in ("0", "1", "2", "3", "4", "5", "6"):
+            assert code in result.stdout, f"missing exit code {code} from --help"
+        # Spot-check the categories from NFR-9 are present so the table is
+        # human-readable, not just a column of digits.
+        assert "usage" in result.stdout.lower()
+        assert "decode" in result.stdout.lower()
+
     def test_long_only_flags_are_accepted(self, runner: CliRunner, tmp_path: Path) -> None:
         input_file = _touch(tmp_path, "episode.mp3")
         result = runner.invoke(

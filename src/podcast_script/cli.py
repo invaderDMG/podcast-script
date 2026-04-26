@@ -34,10 +34,31 @@ _DID_YOU_MEAN_MAX_DISTANCE = 2
 """Per AC-US-1.5: suggest a code only when its Levenshtein distance to the
 typo is ≤ 2. Larger distances would surface unrelated codes as 'suggestions'."""
 
+# Exit-code table required in --help by SRS §9.1 (line 430): "lists every
+# flag, the eight supported --lang codes, AND the documented exit-code
+# table (NFR-9)". Codes themselves are owned by the exception classes in
+# errors.py per ADR-0006; this is the human-readable surface.
+#
+# The leading ``\b`` is Click's "do not reflow this paragraph" marker —
+# required because Click otherwise rewraps the epilog into one run-on
+# line. Typer renders this through Click when ``rich_markup_mode=None``.
+_EXIT_CODE_EPILOG = (
+    "\b\n"
+    "Exit codes (NFR-9):\n"
+    "  0  success\n"
+    "  1  generic / unexpected internal error\n"
+    "  2  usage error (bad flags, missing/unsupported --lang, ffmpeg not on PATH)\n"
+    "  3  input I/O error (input not found, output parent missing)\n"
+    "  4  decode error (ffmpeg failed)\n"
+    "  5  model / network error\n"
+    "  6  output exists without --force"
+)
+
 app = typer.Typer(
     add_completion=False,
     no_args_is_help=True,
     pretty_exceptions_show_locals=False,
+    rich_markup_mode=None,
 )
 
 
@@ -144,7 +165,7 @@ def _run_pipeline(
     del input_path, output_path, lang, model, backend, device, force, debug
 
 
-@app.command()
+@app.command(epilog=_EXIT_CODE_EPILOG)
 def main(
     input_path: Annotated[
         Path,

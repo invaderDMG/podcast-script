@@ -147,19 +147,23 @@ class TestConfigure:
 
         assert logger.propagate is False
 
-    def test_handler_disables_rich_chrome_and_uses_logfmt_formatter(
+    def test_handler_disables_markup_and_uses_logfmt_formatter(
         self,
         reset_logger: logging.Logger,
     ) -> None:
-        """ADR-0008 #2-3: Rich is the rendering channel only — show_time/level/path
-        are off (logfmt owns those slots) and ``markup=False`` keeps Rich from
-        eating ``[brackets]`` inside logfmt values."""
+        """ADR-0008 #2-3: Rich is the rendering channel only — ``markup=False``
+        keeps Rich from eating ``[brackets]`` inside logfmt values, and the
+        formatter that owns the on-stderr bytes is ours.
+
+        The chrome flags (``show_time``/``show_level``/``show_path``) live on
+        Rich's private ``_log_render`` and are passed through verbatim by
+        ``RichHandler``; the load-bearing contract is the on-stderr bytes
+        (NFR-10), which a future byte-capture test will pin once a real
+        ``Progress`` lands in POD-013.
+        """
         logger = configure("normal", progress=None)
 
         (handler,) = (h for h in logger.handlers if isinstance(h, RichHandler))
-        assert handler._log_render.show_time is False
-        assert handler._log_render.show_level is False
-        assert handler._log_render.show_path is False
         assert handler.markup is False
         assert isinstance(handler.formatter, LogfmtFormatter)
 

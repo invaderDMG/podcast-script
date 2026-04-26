@@ -117,9 +117,7 @@ def to_jsonl(segments: list[Segment]) -> str:
 
     if not segments:
         return ""
-    lines = [
-        json.dumps({"start": s.start, "end": s.end, "label": s.label}) for s in segments
-    ]
+    lines = [json.dumps({"start": s.start, "end": s.end, "label": s.label}) for s in segments]
     return "\n".join(lines) + "\n"
 
 
@@ -172,7 +170,7 @@ class InaSpeechSegmenter:
         return a stub engine without touching TF).  Production code path
         triggers the lazy import here.
         """
-        from inaSpeechSegmenter import Segmenter as _InaSeg  # type: ignore[import-not-found]
+        from inaSpeechSegmenter import Segmenter as _InaSeg  # type: ignore[import-untyped]
 
         return _InaSeg(vad_engine="smn", detect_gender=False)
 

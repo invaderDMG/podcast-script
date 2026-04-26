@@ -116,8 +116,14 @@ def _make_pipeline(
     return pipeline, backend, segmenter
 
 
-def test_pipeline_writes_default_output_AC_US_1_1(tmp_path: Path) -> None:
-    """AC-US-1.1: with default output, Markdown lands at ``<input-stem>.md``."""
+def test_pipeline_writes_to_resolved_output_path_AC_US_1_1(tmp_path: Path) -> None:
+    """AC-US-1.1 (orchestrator boundary): the resolved output Markdown lands.
+
+    The default-path *resolution* (``input_path.with_suffix(".md")``) lives
+    in :mod:`podcast_script.cli`, not in :class:`Pipeline`; this test
+    verifies the orchestrator writes to whichever path the cli passed in
+    — i.e. the cli/Pipeline contract for AC-US-1.1.
+    """
     input_path = tmp_path / "episode.mp3"
     input_path.write_bytes(b"")  # decode is faked; existence keeps cli-wiring honest
     output_path = tmp_path / "episode.md"

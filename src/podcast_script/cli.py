@@ -29,6 +29,7 @@ import typer
 
 from .errors import PodcastScriptError, UsageError
 from .logging_setup import Verbosity, configure
+from .segment import Segment
 
 if TYPE_CHECKING:
     import numpy as np
@@ -36,7 +37,6 @@ if TYPE_CHECKING:
 
     from .backends.base import TranscribedSegment
     from .render import TimestampFormat
-    from .segment import Segment
 
 SUPPORTED_LANGS: tuple[str, ...] = ("es", "en", "pt", "fr", "de", "it", "ca", "eu")
 """The eight v1 ``--lang`` codes (SRS §1.7). Frozen for v1.0.0; expanding
@@ -190,8 +190,6 @@ class _StubSegmenter:
     """
 
     def segment(self, pcm: npt.NDArray[np.float32]) -> list[Segment]:
-        from .segment import Segment
-
         duration_s = len(pcm) / 16_000
         return [Segment(start=0.0, end=duration_s, label="speech")]
 

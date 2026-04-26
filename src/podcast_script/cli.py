@@ -228,8 +228,3 @@ def main(
         if verbosity == "debug":
             raise
         raise typer.Exit(1) from exc
-
-
-def _cli_main() -> None:
-    """Entry point for ``python -m podcast_script`` and the console-script shim."""
-    app()

@@ -9,6 +9,9 @@ dependencies = [
     "typer>=0.25.0",
 ]
 
+[project.scripts]
+podcast-script = "podcast_script.cli:app"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

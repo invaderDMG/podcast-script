@@ -10,6 +10,7 @@ the EC-3 spaces+non-ASCII path requirement.
 
 from __future__ import annotations
 
+import os
 import shutil
 import wave
 from pathlib import Path
@@ -45,6 +46,41 @@ def test_decode_raises_input_io_error_when_input_missing_AC_US_1_4(tmp_path: Pat
     with pytest.raises(InputIOError) as exc_info:
         decode(missing)
     assert str(missing) in str(exc_info.value)
+
+
+def test_decode_raises_input_io_error_when_input_unreadable_AC_US_1_4(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AC-US-1.4 — *unreadable* input file → :class:`InputIOError` (exit 3).
+
+    SRS UC-1 E1 spells out two distinct messages: ``not found`` and
+    ``not readable``. ``Path.is_file()`` returns ``True`` for a file the
+    user has no read permission on, so without an explicit access check
+    that branch falls through to ffmpeg and surfaces as DecodeError
+    (exit 4) — wrong exit code for a permission problem.
+
+    Monkeypatching ``os.access`` keeps this a Tier-1 unit test (no real
+    chmod, no real ffmpeg dependency).
+    """
+    f = tmp_path / "ep.mp3"
+    f.write_bytes(b"\x00")
+    real_access = os.access
+
+    def fake_access(path: object, mode: int, *args: object, **kwargs: object) -> bool:
+        # Only flip R_OK on our target input file. Leave shutil.which's
+        # F_OK | X_OK probes for ffmpeg untouched, otherwise the
+        # ffmpeg-on-PATH guard would fire first and mask this test.
+        if mode == os.R_OK and os.fspath(path) == str(f):  # type: ignore[arg-type]
+            return False
+        return real_access(path, mode, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(os, "access", fake_access)
+
+    with pytest.raises(InputIOError) as exc_info:
+        decode(f)
+    assert "not readable" in str(exc_info.value)
+    assert str(f) in str(exc_info.value)
 
 
 def test_decode_raises_usage_error_when_ffmpeg_not_on_path_UC_1_E4(

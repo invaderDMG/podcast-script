@@ -469,6 +469,62 @@ def test_default_is_cached_uses_huggingface_hub_scan(
     assert backend._is_cached("tiny") is False
 
 
+@pytest.mark.parametrize(
+    ("cached_repo_id", "requested_model", "expected"),
+    [
+        # Bare model requested, only the .en variant cached: AC-US-5.1
+        # would silently regress under a substring match. The matcher
+        # MUST anchor on the end of the repo id so this returns False.
+        ("Systran/faster-whisper-tiny.en", "tiny", False),
+        ("Systran/faster-whisper-base.en", "base", False),
+        ("Systran/faster-whisper-small.en", "small", False),
+        ("Systran/faster-whisper-medium.en", "medium", False),
+        # Same-direction matches MUST stay True — the bare model is
+        # cached, requesting it should suppress the notice (AC-US-5.2).
+        ("Systran/faster-whisper-tiny", "tiny", True),
+        ("Systran/faster-whisper-large-v3", "large-v3", True),
+        # Community fork (mobiuslabsgmbh) for large-v3-turbo MUST match;
+        # any owner/<faster-whisper-{model}> combination is valid.
+        ("mobiuslabsgmbh/faster-whisper-large-v3-turbo", "large-v3-turbo", True),
+        # Reverse direction: .en model requested, only bare cached.
+        # This correctly returns False under both matchers — the ask
+        # really is for a different repo, so the notice should fire.
+        ("Systran/faster-whisper-tiny", "tiny.en", False),
+    ],
+)
+def test_default_is_cached_anchors_match_on_end_of_repo_id(
+    monkeypatch: pytest.MonkeyPatch,
+    cached_repo_id: str,
+    requested_model: str,
+    expected: bool,
+) -> None:
+    """Regression for the AC-US-5.1 silent-suppression bug raised on PR #12:
+    a substring match (``"faster-whisper-tiny" in "…/faster-whisper-tiny.en"``)
+    falsely reports the bare ``tiny`` model as cached when only the
+    ``tiny.en`` variant is on disk, suppressing the notice while the
+    actual download for ``tiny`` runs unannounced. Anchor the match
+    on ``repo.repo_id.endswith(target)`` to disambiguate.
+    """
+
+    class _FakeRepo:
+        def __init__(self, repo_id: str) -> None:
+            self.repo_id = repo_id
+
+    class _FakeCacheInfo:
+        def __init__(self, repos: list[_FakeRepo]) -> None:
+            self.repos = repos
+
+    import huggingface_hub
+
+    monkeypatch.setattr(
+        huggingface_hub,
+        "scan_cache_dir",
+        lambda *_a, **_k: _FakeCacheInfo([_FakeRepo(cached_repo_id)]),
+    )
+
+    assert FasterWhisperBackend()._is_cached(requested_model) is expected
+
+
 def test_default_is_cached_returns_false_when_scan_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

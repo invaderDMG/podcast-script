@@ -1,18 +1,21 @@
-"""Tests for the C-FasterWhisper backend (POD-019).
+"""Tests for the C-FasterWhisper backend (POD-019, POD-021).
 
 Tier 1 unit tests per ADR-0017: the lazy-import boundary (ADR-0011),
-the ``ImportError`` → :class:`ModelError` wrap (ADR-0006), and the
-``transcribe()`` shape (ADR-0003 / ADR-0004) exercised against a
-mocked engine seam. The real ``faster_whisper`` is never imported in
-this suite — POD-030 (SP-6) lands the Tier 2 contract test that
+the ``ImportError`` → :class:`ModelError` wrap (ADR-0006), the
+``transcribe()`` shape (ADR-0003 / ADR-0004), and the AC-US-5.1
+first-run model-download notice (POD-021) exercised against a mocked
+cache-detection seam. The real ``faster_whisper`` is never imported
+in this suite — POD-030 (SP-6) lands the Tier 2 contract test that
 runs against the actual library.
 """
 
 from __future__ import annotations
 
 import importlib
+import logging
 import sys
 from collections.abc import Iterable, Iterator
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -290,3 +293,266 @@ def test_load_wraps_oserror_disk_failure_in_model_error() -> None:
 
     assert isinstance(exc_info.value.__cause__, OSError)
     assert "tiny" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# POD-021 — AC-US-5.1 / AC-US-5.2 first-run model-download notice integration
+# ---------------------------------------------------------------------------
+
+
+def _attach_capture(logger_name: str) -> list[logging.LogRecord]:
+    """Attach a list-recording handler to ``logger_name`` and return the list.
+
+    Direct handler attach (rather than ``caplog``) so the test does not
+    depend on ``propagate`` flags — the backend logs through its own
+    module-named child of ``podcast_script``.
+    """
+    records: list[logging.LogRecord] = []
+
+    class _Capture(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    logger = logging.getLogger(logger_name)
+    handler = _Capture()
+    handler.setLevel(logging.DEBUG)
+    logger.addHandler(handler)
+    logger.setLevel(logging.DEBUG)
+    return records
+
+
+def _make_cache_aware_backend(
+    *,
+    cached: bool,
+    on_build: list[str] | None = None,
+) -> FasterWhisperBackend:
+    """Build a backend whose ``_is_cached`` is hard-wired to ``cached``.
+
+    ``_build_model`` records its invocation in ``on_build`` (if provided)
+    so callers can assert AC-US-5.1's ordering invariant: the notice
+    MUST be emitted before any heavy build path runs.
+    """
+
+    class _CacheAwareBackend(FasterWhisperBackend):
+        def _is_cached(self, model: str) -> bool:
+            return cached
+
+        def _build_model(self, model: str, device: str) -> object:
+            if on_build is not None:
+                on_build.append("build")
+            return object()
+
+    return _CacheAwareBackend()
+
+
+def test_load_emits_first_run_notice_on_cache_miss_AC_US_5_1() -> None:
+    """AC-US-5.1: when the model is not in the local cache,
+    :meth:`FasterWhisperBackend.load` MUST emit a single
+    ``level=info event=model_download model=<name> size_gb=<n>`` line
+    (locked shape per ADR-0012) so the user sees within 1 s of process
+    start that a multi-GB download is in progress (NFR-6).
+    """
+    records = _attach_capture("podcast_script.backends.faster")
+    backend = _make_cache_aware_backend(cached=False)
+
+    backend.load(model="large-v3", device="cpu")
+
+    notices = [r for r in records if getattr(r, "event", None) == "model_download"]
+    assert len(notices) == 1
+    notice = notices[0]
+    assert notice.levelno == logging.INFO
+    assert getattr(notice, "model", None) == "large-v3"
+    assert getattr(notice, "size_gb", None) == "3"
+
+
+def test_load_notice_precedes_build_model_AC_US_5_1() -> None:
+    """AC-US-5.1 / NFR-6 ordering invariant: the notice MUST be emitted
+    BEFORE :meth:`FasterWhisperBackend._build_model` is called — that
+    method is where the heavy ``faster_whisper`` import + HF download
+    triggers happen, and the 1-s budget is measured from process start.
+    Emitting after the download has begun would defeat the AC.
+    """
+    records = _attach_capture("podcast_script.backends.faster")
+    build_calls: list[str] = []
+    notices_at_build_time: list[int] = []
+
+    class _OrderingBackend(FasterWhisperBackend):
+        def _is_cached(self, model: str) -> bool:
+            return False
+
+        def _build_model(self, model: str, device: str) -> object:
+            notices_at_build_time.append(
+                sum(1 for r in records if getattr(r, "event", None) == "model_download")
+            )
+            build_calls.append("build")
+            return object()
+
+    _OrderingBackend().load(model="large-v3", device="cpu")
+
+    assert build_calls == ["build"]
+    assert notices_at_build_time == [1], (
+        "model_download notice must fire BEFORE _build_model so the "
+        "AC-US-5.1 1-s budget holds even when HF download is slow"
+    )
+
+
+def test_load_silent_on_cache_hit_AC_US_5_2() -> None:
+    """AC-US-5.2: when the requested model is already cached, no
+    ``model_download`` notice is emitted. Subsequent runs after the
+    initial download stay silent so wrappers piping the tool don't see
+    a spurious download event on every invocation.
+    """
+    records = _attach_capture("podcast_script.backends.faster")
+    backend = _make_cache_aware_backend(cached=True)
+
+    backend.load(model="large-v3", device="cpu")
+
+    notices = [r for r in records if getattr(r, "event", None) == "model_download"]
+    assert notices == []
+
+
+def test_load_skips_cache_check_on_repeat_call() -> None:
+    """ADR-0011 first-use site: a second :meth:`load` MUST short-circuit
+    before the cache check (and before any helper call). Otherwise the
+    AC-US-5.2 invariant could be violated for in-process re-use even
+    though the model was downloaded by the first call.
+    """
+    records = _attach_capture("podcast_script.backends.faster")
+    cache_calls: list[str] = []
+
+    class _CountingCacheBackend(FasterWhisperBackend):
+        def _is_cached(self, model: str) -> bool:
+            cache_calls.append(model)
+            return False
+
+        def _build_model(self, model: str, device: str) -> object:
+            return object()
+
+    backend = _CountingCacheBackend()
+    backend.load(model="large-v3", device="cpu")
+    backend.load(model="large-v3", device="cpu")
+
+    assert cache_calls == ["large-v3"], "second load() must short-circuit before _is_cached re-runs"
+    notices = [r for r in records if getattr(r, "event", None) == "model_download"]
+    assert len(notices) == 1
+
+
+def test_default_is_cached_uses_huggingface_hub_scan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Real ``_is_cached`` path: stub ``huggingface_hub.scan_cache_dir``
+    to return a synthetic cache containing ``Systran/faster-whisper-large-v3``
+    and assert :meth:`_is_cached` returns ``True`` for ``large-v3`` and
+    ``False`` for ``tiny`` (not in the synthetic cache). The real lib is
+    consulted only here — POD-030 (Tier 2) covers the live HF surface.
+    """
+
+    class _FakeRepo:
+        def __init__(self, repo_id: str) -> None:
+            self.repo_id = repo_id
+
+    class _FakeCacheInfo:
+        def __init__(self, repos: list[_FakeRepo]) -> None:
+            self.repos = repos
+
+    fake_cache = _FakeCacheInfo([_FakeRepo("Systran/faster-whisper-large-v3")])
+
+    import huggingface_hub
+
+    def _fake_scan(*_args: Any, **_kwargs: Any) -> _FakeCacheInfo:
+        return fake_cache
+
+    monkeypatch.setattr(huggingface_hub, "scan_cache_dir", _fake_scan)
+
+    backend = FasterWhisperBackend()
+    assert backend._is_cached("large-v3") is True
+    assert backend._is_cached("tiny") is False
+
+
+@pytest.mark.parametrize(
+    ("cached_repo_id", "requested_model", "expected"),
+    [
+        # Bare model requested, only the .en variant cached: AC-US-5.1
+        # would silently regress under a substring match. The matcher
+        # MUST anchor on the end of the repo id so this returns False.
+        ("Systran/faster-whisper-tiny.en", "tiny", False),
+        ("Systran/faster-whisper-base.en", "base", False),
+        ("Systran/faster-whisper-small.en", "small", False),
+        ("Systran/faster-whisper-medium.en", "medium", False),
+        # Same-direction matches MUST stay True — the bare model is
+        # cached, requesting it should suppress the notice (AC-US-5.2).
+        ("Systran/faster-whisper-tiny", "tiny", True),
+        ("Systran/faster-whisper-large-v3", "large-v3", True),
+        # Community fork (mobiuslabsgmbh) for large-v3-turbo MUST match;
+        # any owner/<faster-whisper-{model}> combination is valid.
+        ("mobiuslabsgmbh/faster-whisper-large-v3-turbo", "large-v3-turbo", True),
+        # Reverse direction: .en model requested, only bare cached.
+        # This correctly returns False under both matchers — the ask
+        # really is for a different repo, so the notice should fire.
+        ("Systran/faster-whisper-tiny", "tiny.en", False),
+    ],
+)
+def test_default_is_cached_anchors_match_on_end_of_repo_id(
+    monkeypatch: pytest.MonkeyPatch,
+    cached_repo_id: str,
+    requested_model: str,
+    expected: bool,
+) -> None:
+    """Regression for the AC-US-5.1 silent-suppression bug raised on PR #12:
+    a substring match (``"faster-whisper-tiny" in "…/faster-whisper-tiny.en"``)
+    falsely reports the bare ``tiny`` model as cached when only the
+    ``tiny.en`` variant is on disk, suppressing the notice while the
+    actual download for ``tiny`` runs unannounced. Anchor the match
+    on ``repo.repo_id.endswith(target)`` to disambiguate.
+    """
+
+    class _FakeRepo:
+        def __init__(self, repo_id: str) -> None:
+            self.repo_id = repo_id
+
+    class _FakeCacheInfo:
+        def __init__(self, repos: list[_FakeRepo]) -> None:
+            self.repos = repos
+
+    import huggingface_hub
+
+    monkeypatch.setattr(
+        huggingface_hub,
+        "scan_cache_dir",
+        lambda *_a, **_k: _FakeCacheInfo([_FakeRepo(cached_repo_id)]),
+    )
+
+    assert FasterWhisperBackend()._is_cached(requested_model) is expected
+
+
+def test_default_is_cached_returns_false_when_scan_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If ``huggingface_hub.scan_cache_dir`` raises (corrupt cache,
+    permission denied, etc.), ``_is_cached`` MUST return ``False`` — i.e.
+    err on the side of emitting the notice, never silently swallow a
+    multi-GB download. False negatives are tolerable; false positives
+    are not.
+    """
+    import huggingface_hub
+
+    def _raising_scan(*_args: Any, **_kwargs: Any) -> Any:
+        raise OSError("synthetic scan failure")
+
+    monkeypatch.setattr(huggingface_hub, "scan_cache_dir", _raising_scan)
+
+    assert FasterWhisperBackend()._is_cached("large-v3") is False
+
+
+def test_module_does_not_eagerly_import_huggingface_hub() -> None:
+    """ADR-0011: importing :mod:`podcast_script.backends.faster` at CLI
+    startup MUST NOT trigger a ``huggingface_hub`` import — the cache
+    check is lazy too. Companion to the ``faster_whisper`` lazy-boundary
+    test at the top of this file.
+    """
+    sys.modules.pop("podcast_script.backends.faster", None)
+    sys.modules.pop("huggingface_hub", None)
+
+    importlib.import_module("podcast_script.backends.faster")
+
+    assert "huggingface_hub" not in sys.modules

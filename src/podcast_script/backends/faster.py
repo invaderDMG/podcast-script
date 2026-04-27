@@ -1,20 +1,26 @@
-"""C-FasterWhisper backend: ``WhisperBackend`` impl on Linux/CUDA/CPU (POD-019).
+"""C-FasterWhisper backend: ``WhisperBackend`` impl on Linux/CUDA/CPU (POD-019, POD-021).
 
 Implements :class:`~podcast_script.backends.base.WhisperBackend` (ADR-0003)
 with a lazy ``faster_whisper`` import deferred to :meth:`FasterWhisperBackend.load`
 per ADR-0011. The Pipeline (POD-008) calls ``load()`` immediately after
 CLI validation per ADR-0009 so the AC-US-5.1 first-run notice fires
-before decode (POD-021 ships the formal notice line).
+before decode.
 
-``ImportError`` from the heavy chain (CTranslate2 / tokenizers / huggingface_hub)
-and any cache / network / disk failure inside ``load()`` are wrapped in
-:class:`~podcast_script.errors.ModelError` (exit 5) per ADR-0006 and
-ADR-0011 Consequences — keeps the NFR-9 exit-code contract intact even
+POD-021 wires the AC-US-5.1 notice into ``load()``: a cheap cache check
+(:meth:`_is_cached`, lazy-importing ``huggingface_hub.scan_cache_dir``)
+runs before the heavy ``faster_whisper`` import. On a miss the locked
+``event=model_download`` line goes to stderr (ADR-0012) within the
+NFR-6 1-s budget, then ``huggingface_hub``'s own progress bar follows
+the heavy build path. ``ImportError`` from the heavy chain (CTranslate2 /
+tokenizers / huggingface_hub) and any cache / network / disk failure
+inside ``load()`` are wrapped in :class:`~podcast_script.errors.ModelError`
+(exit 5) per ADR-0006 — keeps the NFR-9 exit-code contract intact even
 when the upstream library API drifts (R-17).
 """
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable, Iterator
 from typing import TYPE_CHECKING, Protocol, cast
 
@@ -22,7 +28,9 @@ import numpy as np
 import numpy.typing as npt
 
 from ..errors import ModelError
-from .base import TranscribedSegment
+from .base import TranscribedSegment, emit_first_run_notice_if_missing
+
+_log = logging.getLogger(__name__)
 
 
 class _FasterSegment(Protocol):
@@ -74,12 +82,16 @@ class FasterWhisperBackend:
     def load(self, model: str, device: str) -> None:
         """Resolve and load the requested model (ADR-0009 / ADR-0011).
 
-        Subsequent calls are a no-op — the heavy build path runs once per
-        process. Wraps the universe of failure modes that ``faster_whisper``
-        + ``huggingface_hub`` surface (``ImportError`` from the lib chain,
-        ``OSError`` from disk / cache, network / HTTP errors, library API
-        drift) into :class:`ModelError` so ``cli.py``'s NFR-9 translation
-        maps them all to exit code 5 with a useful message (AC-US-5.4).
+        On a first call, runs the AC-US-5.1 cache check via
+        :meth:`_is_cached` and emits the locked ``event=model_download``
+        notice (ADR-0012) before any heavy import — so NFR-6's 1-s
+        budget holds even when the HF download is slow. Subsequent
+        calls are a no-op. Wraps the universe of failure modes that
+        ``faster_whisper`` + ``huggingface_hub`` surface (``ImportError``
+        from the lib chain, ``OSError`` from disk / cache, network /
+        HTTP errors, library API drift) into :class:`ModelError` so
+        ``cli.py``'s NFR-9 translation maps them all to exit code 5
+        with a useful message (AC-US-5.4).
 
         ``KeyboardInterrupt`` and ``SystemExit`` propagate untouched per
         ADR-0014 (Ctrl-C is the user's contract; AC-US-5.3 resume / restart
@@ -87,6 +99,11 @@ class FasterWhisperBackend:
         """
         if self._model is not None:
             return
+        emit_first_run_notice_if_missing(
+            model,
+            is_cached=self._is_cached,
+            logger=_log,
+        )
         try:
             self._model = self._build_model(model, device)
         except ImportError as e:
@@ -108,6 +125,39 @@ class FasterWhisperBackend:
                 f"Failed to load faster-whisper model '{model}': {type(e).__name__}: {e}"
             ) from e
         self._model_name = model
+
+    def _is_cached(self, model: str) -> bool:
+        """Return ``True`` if a faster-whisper cache entry for ``model`` exists.
+
+        Real path: lazy-imports ``huggingface_hub`` and scans the local
+        cache for any repo whose id ends with ``faster-whisper-{model}``
+        (matches both Systran's official conversions and community
+        forks like ``mobiuslabsgmbh/faster-whisper-large-v3-turbo``).
+        Override-point for unit tests — POD-030 (Tier 2, SP-6) covers
+        the live HF surface.
+
+        The match anchors at the end of the repo id rather than using
+        a plain substring: ``"faster-whisper-tiny"`` is a substring of
+        ``"…/faster-whisper-tiny.en"``, and a substring matcher would
+        falsely report the bare ``tiny`` as cached when only the ``.en``
+        variant is on disk — silently suppressing the AC-US-5.1 notice
+        for an unrelated multi-GB download.
+
+        On any failure (HF lib missing, scan errors, permission denied)
+        returns ``False`` so the AC-US-5.1 notice fires conservatively
+        rather than silently letting a multi-GB download surprise the
+        user.
+        """
+        try:
+            from huggingface_hub import scan_cache_dir
+        except ImportError:
+            return False
+        try:
+            info = scan_cache_dir()
+        except Exception:
+            return False
+        target = f"faster-whisper-{model}"
+        return any(repo.repo_id.endswith(target) for repo in info.repos)
 
     def _build_model(self, model: str, device: str) -> object:
         """Construct the underlying ``faster_whisper.WhisperModel``.

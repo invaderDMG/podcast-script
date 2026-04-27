@@ -243,3 +243,177 @@ class TestCliGrammarSurface:
             ],
         )
         assert result.exit_code == 0, f"stderr={result.stderr!r}"
+
+
+class TestOutputExistsCheck:
+    """AC-US-6.1 — refuse to overwrite an existing output without ``--force``.
+
+    POD-022: the cli rejects a run before the pipeline starts when the
+    resolved output path already exists and ``--force``/``-f`` was not
+    passed. The pipeline never runs in this branch, so no monkeypatch is
+    needed — exit 6 must surface from the pre-flight gate.
+    """
+
+    def test_existing_output_without_force_exits_6(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        input_file = _touch(tmp_path, "episode.mp3")
+        output_file = tmp_path / "episode.md"
+        output_file.write_text("hand-edited transcript\n", encoding="utf-8")
+        result = runner.invoke(app, [str(input_file), "--lang", "es"])
+        assert result.exit_code == 6, f"stderr={result.stderr!r}"
+
+    def test_existing_output_message_names_file_and_suggests_force(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        input_file = _touch(tmp_path, "episode.mp3")
+        output_file = tmp_path / "episode.md"
+        output_file.write_text("hand-edited transcript\n", encoding="utf-8")
+        result = runner.invoke(app, [str(input_file), "--lang", "es"])
+        # AC-US-6.1: stderr names the existing file and instructs --force/-f.
+        assert "episode.md" in result.stderr, f"stderr={result.stderr!r}"
+        assert "--force" in result.stderr, f"stderr={result.stderr!r}"
+
+    def test_existing_output_unchanged_after_refused_run(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        input_file = _touch(tmp_path, "episode.mp3")
+        output_file = tmp_path / "episode.md"
+        prior = "hand-edited transcript\n"
+        output_file.write_text(prior, encoding="utf-8")
+        runner.invoke(app, [str(input_file), "--lang", "es"])
+        # AC-US-6.1: "episode.md is left unchanged."
+        assert output_file.read_text(encoding="utf-8") == prior
+
+    def test_existing_output_emits_logfmt_event_output_exists(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        # ADR-0006 + ADR-0008: every typed-error exit logs the locked
+        # ``event`` token (here ``output_exists``, NFR-9 exit 6) so users
+        # can grep one fixed key on stderr.
+        input_file = _touch(tmp_path, "episode.mp3")
+        output_file = tmp_path / "episode.md"
+        output_file.write_text("hand-edited\n", encoding="utf-8")
+        result = runner.invoke(app, [str(input_file), "--lang", "es"])
+        assert "event=output_exists" in result.stderr
+        assert "code=6" in result.stderr
+
+    def test_explicit_output_via_dash_o_also_checked(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        # The check applies to the *resolved* output path, not just the
+        # default ``<input-stem>.md`` — ``-o``/``--output`` flows through
+        # the same gate.
+        input_file = _touch(tmp_path, "episode.mp3")
+        custom = tmp_path / "custom.md"
+        custom.write_text("hand-edited\n", encoding="utf-8")
+        result = runner.invoke(
+            app, [str(input_file), "--lang", "es", "-o", str(custom)]
+        )
+        assert result.exit_code == 6, f"stderr={result.stderr!r}"
+
+    def test_force_bypasses_gate(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # POD-022 just opens the gate; POD-023 will lock down the
+        # "actually overwrites" + atomic-preservation paths end-to-end
+        # (AC-US-6.2 / AC-US-6.3). Here we only assert that ``--force``
+        # avoids the exit-6 refusal — pipeline is stubbed.
+        from podcast_script import cli as cli_module
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: None)
+
+        input_file = _touch(tmp_path, "episode.mp3")
+        output_file = tmp_path / "episode.md"
+        output_file.write_text("hand-edited\n", encoding="utf-8")
+        result = runner.invoke(
+            app, [str(input_file), "--lang", "es", "--force"]
+        )
+        assert result.exit_code == 0, f"stderr={result.stderr!r}"
+        # Short alias ``-f`` is checked by ``test_locked_short_flags_are_accepted``.
+
+    def test_no_pre_existing_output_runs_pipeline(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Sanity: when the output doesn't exist the gate is a no-op.
+        from podcast_script import cli as cli_module
+
+        called: list[Path] = []
+        monkeypatch.setattr(
+            cli_module,
+            "_run_pipeline",
+            lambda **kw: called.append(kw["output_path"]),
+        )
+
+        input_file = _touch(tmp_path, "episode.mp3")
+        result = runner.invoke(app, [str(input_file), "--lang", "es"])
+        assert result.exit_code == 0
+        assert called == [tmp_path / "episode.md"]
+
+
+class TestMissingParentDir:
+    """AC-US-6.4 — resolved output's parent directory does not exist → exit 3.
+
+    Holds with or without ``--force`` (the SRS spelling). The cli MUST NOT
+    create the missing parent silently.
+    """
+
+    def test_missing_parent_exits_3(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        input_file = _touch(tmp_path, "episode.mp3")
+        output_path = tmp_path / "does-not-exist" / "episode.md"
+        result = runner.invoke(
+            app, [str(input_file), "--lang", "es", "-o", str(output_path)]
+        )
+        assert result.exit_code == 3, f"stderr={result.stderr!r}"
+
+    def test_missing_parent_message_names_directory(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        input_file = _touch(tmp_path, "episode.mp3")
+        output_path = tmp_path / "does-not-exist" / "episode.md"
+        result = runner.invoke(
+            app, [str(input_file), "--lang", "es", "-o", str(output_path)]
+        )
+        assert "does-not-exist" in result.stderr, f"stderr={result.stderr!r}"
+
+    def test_missing_parent_creates_no_directories(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        input_file = _touch(tmp_path, "episode.mp3")
+        missing_parent = tmp_path / "does-not-exist"
+        output_path = missing_parent / "episode.md"
+        runner.invoke(
+            app, [str(input_file), "--lang", "es", "-o", str(output_path)]
+        )
+        assert not missing_parent.exists(), "cli must not create the missing parent"
+
+    def test_missing_parent_with_force_still_exits_3(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        # SRS AC-US-6.4: "with or without --force".
+        input_file = _touch(tmp_path, "episode.mp3")
+        output_path = tmp_path / "does-not-exist" / "episode.md"
+        result = runner.invoke(
+            app,
+            [str(input_file), "--lang", "es", "-f", "-o", str(output_path)],
+        )
+        assert result.exit_code == 3, f"stderr={result.stderr!r}"
+
+    def test_missing_parent_emits_logfmt_event_input_io_error(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        input_file = _touch(tmp_path, "episode.mp3")
+        output_path = tmp_path / "does-not-exist" / "episode.md"
+        result = runner.invoke(
+            app, [str(input_file), "--lang", "es", "-o", str(output_path)]
+        )
+        assert "event=input_io_error" in result.stderr
+        assert "code=3" in result.stderr

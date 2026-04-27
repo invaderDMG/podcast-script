@@ -14,6 +14,16 @@ from podcast_script.render import TimestampFormat, render
 from podcast_script.segment import Segment
 
 
+def _count_marker_lines(out: str, marker: str) -> int:
+    """Count blockquote lines containing ``marker``.
+
+    Anchoring to ``> [`` blockquote-line prefixes makes the count immune
+    to the marker phrase ever appearing inside a speech transcript — the
+    AC-US-2.1 invariant is about marker *structure*, not text-anywhere.
+    """
+    return sum(1 for line in out.splitlines() if line.startswith("> [") and marker in line)
+
+
 def _leading_timestamps(out: str, fmt: TimestampFormat) -> list[int]:
     """Extract the leading timestamp (in seconds) from each emitted line.
 
@@ -96,6 +106,28 @@ def test_speech_only_input_emits_no_blockquote_AC_US_2_5() -> None:
     assert "music" not in out
 
 
+def test_empty_input_returns_empty_string() -> None:
+    """Edge: with no segments and no transcripts the renderer returns
+    the empty string — no trailing newline, no fmt-dependent leakage.
+
+    Exercises the early-return branch in :func:`render` so the module's
+    contract surface is fully covered.
+    """
+    assert render([], [], "MM:SS") == ""
+    assert render([], [], "HH:MM:SS") == ""
+
+
+def test_only_noise_and_silence_returns_empty_string_AC_US_2_5() -> None:
+    """AC-US-2.5 corollary: an input made entirely of noise/silence (and
+    therefore zero transcripts) renders to the empty string — the
+    renderer never invents content."""
+    segments = [
+        Segment(0.0, 5.0, "silence"),
+        Segment(5.0, 10.0, "noise"),
+    ]
+    assert render(segments, [], "MM:SS") == ""
+
+
 def test_music_marker_exact_shape_AC_US_2_1() -> None:
     """AC-US-2.1: each music region produces exactly one ``music starts``
     and one ``music ends`` blockquote line, in the SRS §1.6 shape
@@ -109,9 +141,12 @@ def test_music_marker_exact_shape_AC_US_2_1() -> None:
 
     assert "> [00:14 — music starts]" in out
     assert "> [00:30 — music ends]" in out
-    # Exactly one of each — never duplicate or omit.
-    assert out.count("music starts") == 1
-    assert out.count("music ends") == 1
+    # Exactly one of each, counted as blockquote lines (not substrings) so
+    # speech text containing the marker phrase cannot inflate the count.
+    starts = _count_marker_lines(out, "music starts")
+    ends = _count_marker_lines(out, "music ends")
+    assert starts == 1
+    assert ends == 1
 
 
 def test_markers_are_english_regardless_of_speech_language_AC_US_2_2() -> None:
@@ -275,5 +310,5 @@ def test_multiple_music_regions_each_get_a_pair_AC_US_2_1() -> None:
 
     out = render(segments, transcripts, "MM:SS")
 
-    assert out.count("music starts") == 3
-    assert out.count("music ends") == 3
+    assert _count_marker_lines(out, "music starts") == 3
+    assert _count_marker_lines(out, "music ends") == 3

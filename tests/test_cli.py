@@ -399,3 +399,137 @@ class TestMissingParentDir:
         result = runner.invoke(app, [str(input_file), "--lang", "es", "-o", str(output_path)])
         assert "event=input_io_error" in result.stderr
         assert "code=3" in result.stderr
+
+
+class TestForceOverwrite:
+    """POD-023 — `--force`/`-f` opt-in path.
+
+    POD-022 opened the gate (refusal without `--force`); POD-023 closes
+    out US-6 by demonstrating end-to-end through the cli that:
+
+    * AC-US-6.2 — with ``--force``/``-f``, the existing file is replaced
+      by the freshly produced transcript and exit code is 0.
+    * AC-US-6.3 — when the run fails *after* the gate, the prior file is
+      preserved (atomic-write invariant from POD-009 / ADR-0005); no temp
+      file leaks at the resolved output path's directory.
+
+    The pipeline is monkeypatched to keep these tests in the cli's
+    Tier-1 boundary (no ffmpeg, no model). The unit-level atomic_write
+    invariants are covered separately in ``tests/test_atomic_write.py``.
+    """
+
+    def test_force_actually_replaces_existing_output_AC_US_6_2(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # AC-US-6.2: "the existing episode.md is replaced with the freshly
+        # generated transcript and the tool exits 0."
+        from podcast_script import atomic_write as atomic_module
+        from podcast_script import cli as cli_module
+
+        fresh = "# fresh transcript\n\nbody from this run\n"
+
+        def fake_run_pipeline(**kwargs: object) -> None:
+            output_path = kwargs["output_path"]
+            assert isinstance(output_path, Path)
+            atomic_module.atomic_write(output_path, fresh)
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", fake_run_pipeline)
+
+        input_file = _touch(tmp_path, "episode.mp3")
+        output_file = tmp_path / "episode.md"
+        output_file.write_text("hand-edited transcript\n", encoding="utf-8")
+
+        result = runner.invoke(app, [str(input_file), "--lang", "es", "--force"])
+
+        assert result.exit_code == 0, f"stderr={result.stderr!r}"
+        assert output_file.read_text(encoding="utf-8") == fresh
+
+    def test_short_dash_f_replaces_existing_output_AC_US_6_2(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # AC-US-6.2 explicitly names ``-f`` alongside ``--force``.
+        from podcast_script import atomic_write as atomic_module
+        from podcast_script import cli as cli_module
+
+        fresh = "# fresh\n"
+
+        def fake_run_pipeline(**kwargs: object) -> None:
+            output_path = kwargs["output_path"]
+            assert isinstance(output_path, Path)
+            atomic_module.atomic_write(output_path, fresh)
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", fake_run_pipeline)
+
+        input_file = _touch(tmp_path, "episode.mp3")
+        output_file = tmp_path / "episode.md"
+        output_file.write_text("prior\n", encoding="utf-8")
+
+        result = runner.invoke(app, [str(input_file), "--lang", "es", "-f"])
+
+        assert result.exit_code == 0, f"stderr={result.stderr!r}"
+        assert output_file.read_text(encoding="utf-8") == fresh
+
+    def test_force_propagates_to_pipeline_runner(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Sanity that the cli composition root forwards the resolved
+        # ``force=True`` to the pipeline runner — without this, downstream
+        # debug-dir refuse-without-force reuse (POD-025) would silently
+        # diverge from the cli flag.
+        from podcast_script import cli as cli_module
+
+        seen: dict[str, object] = {}
+
+        def fake_run_pipeline(**kwargs: object) -> None:
+            seen.update(kwargs)
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", fake_run_pipeline)
+
+        input_file = _touch(tmp_path, "episode.mp3")
+        result = runner.invoke(app, [str(input_file), "--lang", "es", "--force"])
+
+        assert result.exit_code == 0, f"stderr={result.stderr!r}"
+        assert seen.get("force") is True
+
+    def test_force_run_failure_preserves_prior_file_AC_US_6_3(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # AC-US-6.3: "Given any failure during transcription after a
+        # --force run has begun, when the failure occurs, then the
+        # previous episode.md is preserved." Inject a typed pipeline
+        # failure that reaches the cli error-translation path; assert
+        # the prior bytes are intact and no temp file was left behind.
+        from podcast_script import cli as cli_module
+        from podcast_script.errors import DecodeError
+
+        def fake_run_pipeline(**_kwargs: object) -> None:
+            raise DecodeError("ffmpeg returned nonzero exit (synthetic for AC-US-6.3)")
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", fake_run_pipeline)
+
+        input_file = _touch(tmp_path, "episode.mp3")
+        output_file = tmp_path / "episode.md"
+        prior = "hand-edited transcript\nDO NOT CLOBBER\n"
+        output_file.write_text(prior, encoding="utf-8")
+
+        result = runner.invoke(app, [str(input_file), "--lang", "es", "--force"])
+
+        # ADR-0006: DecodeError → exit code 4.
+        assert result.exit_code == 4, f"stderr={result.stderr!r}"
+        # AC-US-6.3: prior file survives byte-for-byte.
+        assert output_file.read_text(encoding="utf-8") == prior
+        # ADR-0005 §Consequences: no ``*.md.tmp`` debris left behind.
+        leftover = list(tmp_path.glob("*.md.tmp"))
+        assert leftover == [], f"unexpected temp leftovers: {leftover!r}"

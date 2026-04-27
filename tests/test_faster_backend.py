@@ -13,6 +13,10 @@ from __future__ import annotations
 import importlib
 import sys
 
+import pytest
+
+from podcast_script.errors import ModelError
+
 # ---------------------------------------------------------------------------
 # ADR-0011 — module-level lazy-import boundary
 # ---------------------------------------------------------------------------
@@ -46,3 +50,74 @@ def test_constructor_does_not_import_faster_whisper() -> None:
 
     assert backend.name == "faster-whisper"
     assert "faster_whisper" not in sys.modules
+
+
+# ---------------------------------------------------------------------------
+# ADR-0006 / ADR-0011 Consequences — ImportError wrap inside load()
+# ---------------------------------------------------------------------------
+
+
+class _StubFasterBackend:
+    """Test seam over ``FasterWhisperBackend`` that overrides the loader.
+
+    Subclasses the real backend so we can stub :meth:`_build_model` without
+    touching the heavy ``faster_whisper`` import. Mirrors the
+    ``_StubInaSegmenter`` pattern in ``tests/test_segment.py``.
+    """
+
+
+def _make_backend_with_build_error(error: Exception) -> object:
+    """Build a backend whose ``_build_model`` raises ``error`` on load.
+
+    Helper kept here (rather than in conftest) because no other test file
+    needs it; POD-030 (Tier 2 contract) tests will run against the real
+    backend, not via this seam.
+    """
+    from podcast_script.backends.faster import FasterWhisperBackend
+
+    class _ErrorBackend(FasterWhisperBackend):
+        def _build_model(self, model: str, device: str) -> object:
+            raise error
+
+    return _ErrorBackend()
+
+
+def test_load_wraps_import_error_in_model_error() -> None:
+    """ADR-0011 Consequences: an ``ImportError`` from the heavy chain
+    (CTranslate2 / tokenizers / faster_whisper itself) MUST surface as
+    :class:`ModelError` (exit 5) so ``cli.py``'s NFR-9 mapping translates
+    it to the published exit-code contract instead of the unexpected
+    fallback (exit 1).
+    """
+    backend = _make_backend_with_build_error(
+        ImportError("No module named 'faster_whisper'"),
+    )
+
+    with pytest.raises(ModelError) as exc_info:
+        backend.load(model="tiny", device="cpu")  # type: ignore[attr-defined]
+
+    assert isinstance(exc_info.value.__cause__, ImportError)
+    assert "faster-whisper" in str(exc_info.value)
+
+
+def test_load_caches_model_across_calls() -> None:
+    """ADR-0011 first-use site: a second :meth:`load` call MUST NOT
+    re-invoke the heavy build path. The Pipeline calls ``load()`` once
+    per run today (ADR-0009), but in-process re-use (e.g. a future batch
+    mode) must not pay the cost twice.
+    """
+    from podcast_script.backends.faster import FasterWhisperBackend
+
+    build_calls = 0
+
+    class _CountingBackend(FasterWhisperBackend):
+        def _build_model(self, model: str, device: str) -> object:
+            nonlocal build_calls
+            build_calls += 1
+            return object()
+
+    backend = _CountingBackend()
+    backend.load(model="tiny", device="cpu")
+    backend.load(model="tiny", device="cpu")
+
+    assert build_calls == 1

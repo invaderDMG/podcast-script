@@ -2,7 +2,8 @@
 
 Covers the CLI surface that POD-006 owns: ``--lang`` curated-set validation
 (AC-US-1.5), required-``--lang`` rejection (AC-US-4.3), the typer entrypoint,
-and ADR-0006 exception → ``typer.Exit`` translation.
+and ADR-0006 exception → ``typer.Exit`` translation. POD-016 adds the
+config-merge surface (AC-US-4.1, AC-US-4.2, AC-US-4.4) at the CLI level.
 """
 
 from __future__ import annotations
@@ -12,8 +13,27 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from podcast_script import config as config_module
 from podcast_script.cli import SUPPORTED_LANGS, app, validate_lang
 from podcast_script.errors import UsageError
+
+
+@pytest.fixture(autouse=True)
+def _isolated_default_config_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pin :data:`config.DEFAULT_CONFIG_PATH` to a non-existent path.
+
+    Without this fixture every CLI test would pick up whatever
+    ``~/.config/podcast-script/config.toml`` happens to exist on the
+    machine running the suite — so a developer with a personal config
+    setting ``lang = "es"`` would silently mask AC-US-4.3 failures
+    (the "no config + no --lang" path). Tests that *want* a config can
+    override this fixture by monkeypatching the same attribute again.
+    """
+    monkeypatch.setattr(
+        config_module, "DEFAULT_CONFIG_PATH", tmp_path / "no-such-config.toml"
+    )
 
 
 @pytest.fixture
@@ -533,3 +553,94 @@ class TestForceOverwrite:
         # ADR-0005 §Consequences: no ``*.md.tmp`` debris left behind.
         leftover = list(tmp_path.glob("*.md.tmp"))
         assert leftover == [], f"unexpected temp leftovers: {leftover!r}"
+
+
+class TestCliConfigMerge:
+    """POD-016 — US-4 acceptance criteria at the CLI surface.
+
+    AC-US-4.3 already lives in :class:`TestCliMissingLang`. The three
+    here cover the config-aware paths: TOML supplies a missing flag,
+    CLI overrides TOML, and a TOML-loaded ``lang = "ja"`` is rejected
+    just like a CLI ``--lang ja`` would be.
+    """
+
+    def _write_config(self, path: Path, body: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+
+    def test_toml_lang_used_when_cli_omits_it_AC_US_4_1(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # AC-US-4.1: with config.toml(lang="es") and no --lang flag,
+        # the run proceeds with lang=es. The pipeline is stubbed so the
+        # test isolates the merge path from segmenter/backend startup.
+        from podcast_script import cli as cli_module
+
+        config_path = tmp_path / "config.toml"
+        self._write_config(config_path, 'lang = "es"\nmodel = "large-v3"\n')
+        monkeypatch.setattr(config_module, "DEFAULT_CONFIG_PATH", config_path)
+
+        seen: dict[str, object] = {}
+
+        def fake_run_pipeline(**kwargs: object) -> None:
+            seen.update(kwargs)
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", fake_run_pipeline)
+
+        input_file = _touch(tmp_path, "episode.mp3")
+        result = runner.invoke(app, [str(input_file)])
+
+        assert result.exit_code == 0, f"stderr={result.stderr!r}"
+        assert seen.get("lang") == "es"
+        assert seen.get("model") == "large-v3"
+
+    def test_cli_flags_override_toml_AC_US_4_2(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # AC-US-4.2: same config(lang="es", model="large-v3"), CLI
+        # passes --lang en --model tiny → CLI wins on both fields.
+        from podcast_script import cli as cli_module
+
+        config_path = tmp_path / "config.toml"
+        self._write_config(config_path, 'lang = "es"\nmodel = "large-v3"\n')
+        monkeypatch.setattr(config_module, "DEFAULT_CONFIG_PATH", config_path)
+
+        seen: dict[str, object] = {}
+        monkeypatch.setattr(
+            cli_module, "_run_pipeline", lambda **kw: seen.update(kw)
+        )
+
+        input_file = _touch(tmp_path, "episode.mp3")
+        result = runner.invoke(
+            app, [str(input_file), "--lang", "en", "--model", "tiny"]
+        )
+
+        assert result.exit_code == 0, f"stderr={result.stderr!r}"
+        assert seen.get("lang") == "en"
+        assert seen.get("model") == "tiny"
+
+    def test_unsupported_toml_lang_rejected_AC_US_4_4(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # AC-US-4.4: config.toml(lang="ja") + no --lang → exit 2,
+        # same AC-US-1.5 validation as a CLI --lang ja would trigger.
+        config_path = tmp_path / "config.toml"
+        self._write_config(config_path, 'lang = "ja"\n')
+        monkeypatch.setattr(config_module, "DEFAULT_CONFIG_PATH", config_path)
+
+        input_file = _touch(tmp_path, "episode.mp3")
+        result = runner.invoke(app, [str(input_file)])
+
+        assert result.exit_code == 2, f"stderr={result.stderr!r}"
+        # Same logfmt token as any other usage error (ADR-0006 + ADR-0008).
+        assert "event=usage_error" in result.stderr
+        assert "ja" in result.stderr

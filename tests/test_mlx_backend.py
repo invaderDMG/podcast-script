@@ -15,6 +15,11 @@ from __future__ import annotations
 import importlib
 import sys
 
+import pytest
+
+from podcast_script.backends.mlx import MlxWhisperBackend
+from podcast_script.errors import ModelError
+
 # ---------------------------------------------------------------------------
 # ADR-0011 — module-level lazy-import boundary
 # ---------------------------------------------------------------------------
@@ -48,3 +53,62 @@ def test_constructor_does_not_import_mlx_whisper() -> None:
 
     assert backend.name == "mlx-whisper"
     assert "mlx_whisper" not in sys.modules
+
+
+# ---------------------------------------------------------------------------
+# ADR-0006 / ADR-0011 Consequences — ImportError wrap inside load()
+# ---------------------------------------------------------------------------
+
+
+def _make_backend_with_build_error(error: Exception) -> MlxWhisperBackend:
+    """Build a backend whose ``_build_model`` raises ``error`` on load.
+
+    Helper kept here (rather than in conftest) because no other test file
+    needs it; POD-030 (Tier 2 contract) tests will run against the real
+    backend, not via this seam.
+    """
+
+    class _ErrorBackend(MlxWhisperBackend):
+        def _build_model(self, model: str, device: str) -> object:
+            raise error
+
+    return _ErrorBackend()
+
+
+def test_load_wraps_import_error_in_model_error() -> None:
+    """ADR-0011 Consequences: an ``ImportError`` from the heavy chain
+    (``mlx``, ``mlx_whisper``, ``huggingface_hub``) MUST surface as
+    :class:`ModelError` (exit 5) so ``cli.py``'s NFR-9 mapping translates
+    it to the published exit-code contract instead of the unexpected
+    fallback (exit 1).
+    """
+    backend = _make_backend_with_build_error(
+        ImportError("No module named 'mlx_whisper'"),
+    )
+
+    with pytest.raises(ModelError) as exc_info:
+        backend.load(model="tiny", device="cpu")
+
+    assert isinstance(exc_info.value.__cause__, ImportError)
+    assert "mlx-whisper" in str(exc_info.value)
+
+
+def test_load_caches_model_across_calls() -> None:
+    """ADR-0011 first-use site: a second :meth:`load` call MUST NOT
+    re-invoke the heavy build path. The Pipeline calls ``load()`` once
+    per run today (ADR-0009), but in-process re-use (e.g. a future batch
+    mode) must not pay the cost twice.
+    """
+    build_calls = 0
+
+    class _CountingBackend(MlxWhisperBackend):
+        def _build_model(self, model: str, device: str) -> object:
+            nonlocal build_calls
+            build_calls += 1
+            return object()
+
+    backend = _CountingBackend()
+    backend.load(model="tiny", device="cpu")
+    backend.load(model="tiny", device="cpu")
+
+    assert build_calls == 1

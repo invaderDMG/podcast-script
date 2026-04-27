@@ -25,12 +25,34 @@ Contract surface (see :class:`RenderFn`):
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from itertools import pairwise
 from typing import Literal, Protocol
 
 from .backends.base import TranscribedSegment
 from .segment import Segment
 
 TimestampFormat = Literal["MM:SS", "HH:MM:SS"]
+
+# Tie-breakers when two events share a timestamp (SRS §1.6 ordering):
+# - music ends first (closes the open marker before anything new),
+# - then music starts (opens the next marker),
+# - then speech text (appears at or after any markers active at that t).
+_PRIO_MUSIC_END = 0
+_PRIO_MUSIC_START = 1
+_PRIO_SPEECH = 2
+
+_EventKind = Literal["music_start", "music_end", "speech"]
+
+
+@dataclass(frozen=True, slots=True)
+class _Event:
+    """One renderable line plus its sort key."""
+
+    time_s: float
+    priority: int
+    kind: _EventKind
+    line: str
 
 
 class RenderFn(Protocol):
@@ -55,16 +77,74 @@ def render(
 
     Pure function — no I/O, no logging, no global state.
     """
-    lines: list[str] = []
-    for seg in segments:
-        if seg.label == "music":
-            lines.append(f"> [{_fmt_ts(seg.start, fmt)} — music starts]")
-            lines.append(f"> [{_fmt_ts(seg.end, fmt)} — music ends]")
-    for ts in transcripts:
-        lines.append(f"`{_fmt_ts(ts.start, fmt)}`  {ts.text}")
-    if not lines:
+    events = _build_events(segments, transcripts, fmt)
+    if not events:
         return ""
-    return "\n".join(lines) + "\n"
+    # Stable sort: ties on (time, priority) keep input order, so two
+    # speech transcripts at the same start time stay in their pipeline
+    # order (which is the per-segment order from ADR-0004's streaming
+    # contract).
+    events.sort(key=lambda e: (e.time_s, e.priority))
+    return _join_with_block_separators(events)
+
+
+def _build_events(
+    segments: list[Segment],
+    transcripts: list[TranscribedSegment],
+    fmt: TimestampFormat,
+) -> list[_Event]:
+    """Materialize the renderable events from segments + transcripts.
+
+    Drops ``noise`` and ``silence`` segments at this layer (AC-US-2.5);
+    everything that survives is either a music marker or a speech line.
+    """
+    events: list[_Event] = []
+    for seg in segments:
+        if seg.label != "music":
+            continue
+        events.append(
+            _Event(
+                time_s=seg.start,
+                priority=_PRIO_MUSIC_START,
+                kind="music_start",
+                line=f"> [{_fmt_ts(seg.start, fmt)} — music starts]",
+            )
+        )
+        events.append(
+            _Event(
+                time_s=seg.end,
+                priority=_PRIO_MUSIC_END,
+                kind="music_end",
+                line=f"> [{_fmt_ts(seg.end, fmt)} — music ends]",
+            )
+        )
+    for ts in transcripts:
+        events.append(
+            _Event(
+                time_s=ts.start,
+                priority=_PRIO_SPEECH,
+                kind="speech",
+                line=f"`{_fmt_ts(ts.start, fmt)}`  {ts.text}",
+            )
+        )
+    return events
+
+
+def _join_with_block_separators(events: list[_Event]) -> str:
+    """Join lines with blank-line separators between blocks.
+
+    A music_start → music_end pair is tight (no blank between); every
+    other transition gets one blank line so the output mirrors the SRS
+    §1.6 example shape.
+    """
+    out: list[str] = [events[0].line]
+    for prev, curr in pairwise(events):
+        if prev.kind == "music_start" and curr.kind == "music_end":
+            out.append(curr.line)
+        else:
+            out.append("")
+            out.append(curr.line)
+    return "\n".join(out) + "\n"
 
 
 def _fmt_ts(seconds: float, fmt: TimestampFormat) -> str:

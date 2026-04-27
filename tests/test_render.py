@@ -20,15 +20,20 @@ def _leading_timestamps(out: str, fmt: TimestampFormat) -> list[int]:
     Returns one int per non-blank line carrying a timestamp. Used by the
     NFR-3 ordering assertion below.
     """
-    pattern = r"^(?:> \[|`)(\d{2}:\d{2}(?::\d{2})?)" if fmt == "HH:MM:SS" else r"^(?:> \[|`)(\d{2}:\d{2})"
+    if fmt == "HH:MM:SS":
+        pattern = r"^(?:> \[|`)(\d{2}:\d{2}:\d{2})"
+    else:
+        pattern = r"^(?:> \[|`)(\d{2}:\d{2})"
     out_seconds: list[int] = []
     for line in out.splitlines():
         m = re.match(pattern, line)
         if m is None:
             continue
         parts = [int(p) for p in m.group(1).split(":")]
-        # Either [HH, MM, SS] or [MM, SS].
-        secs = parts[0] * 3600 + parts[1] * 60 + parts[2] if len(parts) == 3 else parts[0] * 60 + parts[1]
+        if len(parts) == 3:
+            secs = parts[0] * 3600 + parts[1] * 60 + parts[2]
+        else:
+            secs = parts[0] * 60 + parts[1]
         out_seconds.append(secs)
     return out_seconds
 
@@ -166,11 +171,12 @@ def test_emitted_lines_are_in_non_decreasing_time_order_AC_US_2_3() -> None:
     out = render(segments, transcripts, "MM:SS")
     timestamps = _leading_timestamps(out, "MM:SS")
 
-    assert timestamps == sorted(timestamps), (
-        f"timestamps not non-decreasing: {timestamps}"
-    )
+    assert timestamps == sorted(timestamps), f"timestamps not non-decreasing: {timestamps}"
     # Sanity: we got the four expected leading values somewhere in the run.
-    assert 0 in timestamps and 14 in timestamps and 60 in timestamps and 120 in timestamps
+    assert 0 in timestamps
+    assert 14 in timestamps
+    assert 60 in timestamps
+    assert 120 in timestamps
 
 
 def test_speech_inside_music_window_still_orders_correctly_AC_US_2_3() -> None:

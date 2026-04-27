@@ -79,7 +79,11 @@ class FasterWhisperBackend:
         + ``huggingface_hub`` surface (``ImportError`` from the lib chain,
         ``OSError`` from disk / cache, network / HTTP errors, library API
         drift) into :class:`ModelError` so ``cli.py``'s NFR-9 translation
-        maps them all to exit code 5 with a useful message.
+        maps them all to exit code 5 with a useful message (AC-US-5.4).
+
+        ``KeyboardInterrupt`` and ``SystemExit`` propagate untouched per
+        ADR-0014 (Ctrl-C is the user's contract; AC-US-5.3 resume / restart
+        is on the user, not us).
         """
         if self._model is not None:
             return
@@ -90,6 +94,18 @@ class FasterWhisperBackend:
                 f"faster-whisper (or one of its dependencies: CTranslate2, "
                 f"tokenizers, huggingface_hub) is not installed — run "
                 f"`uv sync`. Cannot load model '{model}'."
+            ) from e
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception as e:
+            # huggingface_hub spans a wide exception vocabulary
+            # (httpx.ConnectError, HfHubHTTPError, OSError, ...). Any
+            # non-ImportError failure during model resolution is a
+            # ModelError (exit 5) per AC-US-5.4. R-17 (faster-whisper API
+            # drift) is also covered by this broad wrap — surfacing the
+            # original via __cause__ keeps the trace debuggable.
+            raise ModelError(
+                f"Failed to load faster-whisper model '{model}': {type(e).__name__}: {e}"
             ) from e
         self._model_name = model
 

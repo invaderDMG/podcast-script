@@ -70,3 +70,43 @@ def test_speech_only_input_emits_no_blockquote_AC_US_2_5() -> None:
     assert "just talking" in out
     assert not re.search(r"^> \[", out, flags=re.MULTILINE)
     assert "music" not in out
+
+
+def test_music_marker_exact_shape_AC_US_2_1() -> None:
+    """AC-US-2.1: each music region produces exactly one ``music starts``
+    and one ``music ends`` blockquote line, in the SRS §1.6 shape
+    ``> [<ts> — music starts]`` (em-dash U+2014, single space, square
+    brackets, no trailing punctuation).
+    """
+    segments = [Segment(14.0, 30.0, "music")]
+    transcripts: list[TranscribedSegment] = []
+
+    out = render(segments, transcripts, "MM:SS")
+
+    assert "> [00:14 — music starts]" in out
+    assert "> [00:30 — music ends]" in out
+    # Exactly one of each — never duplicate or omit.
+    assert out.count("music starts") == 1
+    assert out.count("music ends") == 1
+
+
+def test_multiple_music_regions_each_get_a_pair_AC_US_2_1() -> None:
+    """AC-US-2.1: multiple music regions each produce their own
+    start/end pair; the count matches the number of music segments.
+    """
+    segments = [
+        Segment(0.0, 5.0, "music"),
+        Segment(5.0, 60.0, "speech"),
+        Segment(60.0, 75.0, "music"),
+        Segment(75.0, 90.0, "speech"),
+        Segment(90.0, 100.0, "music"),
+    ]
+    transcripts = [
+        TranscribedSegment(start=5.0, end=60.0, text="middle"),
+        TranscribedSegment(start=75.0, end=90.0, text="late"),
+    ]
+
+    out = render(segments, transcripts, "MM:SS")
+
+    assert out.count("music starts") == 3
+    assert out.count("music ends") == 3

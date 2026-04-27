@@ -130,11 +130,18 @@ class FasterWhisperBackend:
         """Return ``True`` if a faster-whisper cache entry for ``model`` exists.
 
         Real path: lazy-imports ``huggingface_hub`` and scans the local
-        cache for any repo whose id contains ``faster-whisper-{model}``
+        cache for any repo whose id ends with ``faster-whisper-{model}``
         (matches both Systran's official conversions and community
         forks like ``mobiuslabsgmbh/faster-whisper-large-v3-turbo``).
         Override-point for unit tests — POD-030 (Tier 2, SP-6) covers
         the live HF surface.
+
+        The match anchors at the end of the repo id rather than using
+        a plain substring: ``"faster-whisper-tiny"`` is a substring of
+        ``"…/faster-whisper-tiny.en"``, and a substring matcher would
+        falsely report the bare ``tiny`` as cached when only the ``.en``
+        variant is on disk — silently suppressing the AC-US-5.1 notice
+        for an unrelated multi-GB download.
 
         On any failure (HF lib missing, scan errors, permission denied)
         returns ``False`` so the AC-US-5.1 notice fires conservatively
@@ -150,7 +157,7 @@ class FasterWhisperBackend:
         except Exception:
             return False
         target = f"faster-whisper-{model}"
-        return any(target in repo.repo_id for repo in info.repos)
+        return any(repo.repo_id.endswith(target) for repo in info.repos)
 
     def _build_model(self, model: str, device: str) -> object:
         """Construct the underlying ``faster_whisper.WhisperModel``.

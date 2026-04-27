@@ -254,9 +254,7 @@ class TestOutputExistsCheck:
     needed — exit 6 must surface from the pre-flight gate.
     """
 
-    def test_existing_output_without_force_exits_6(
-        self, runner: CliRunner, tmp_path: Path
-    ) -> None:
+    def test_existing_output_without_force_exits_6(self, runner: CliRunner, tmp_path: Path) -> None:
         input_file = _touch(tmp_path, "episode.mp3")
         output_file = tmp_path / "episode.md"
         output_file.write_text("hand-edited transcript\n", encoding="utf-8")
@@ -307,9 +305,7 @@ class TestOutputExistsCheck:
         input_file = _touch(tmp_path, "episode.mp3")
         custom = tmp_path / "custom.md"
         custom.write_text("hand-edited\n", encoding="utf-8")
-        result = runner.invoke(
-            app, [str(input_file), "--lang", "es", "-o", str(custom)]
-        )
+        result = runner.invoke(app, [str(input_file), "--lang", "es", "-o", str(custom)])
         assert result.exit_code == 6, f"stderr={result.stderr!r}"
 
     def test_force_bypasses_gate(
@@ -329,9 +325,7 @@ class TestOutputExistsCheck:
         input_file = _touch(tmp_path, "episode.mp3")
         output_file = tmp_path / "episode.md"
         output_file.write_text("hand-edited\n", encoding="utf-8")
-        result = runner.invoke(
-            app, [str(input_file), "--lang", "es", "--force"]
-        )
+        result = runner.invoke(app, [str(input_file), "--lang", "es", "--force"])
         assert result.exit_code == 0, f"stderr={result.stderr!r}"
         # Short alias ``-f`` is checked by ``test_locked_short_flags_are_accepted``.
 
@@ -364,14 +358,10 @@ class TestMissingParentDir:
     create the missing parent silently.
     """
 
-    def test_missing_parent_exits_3(
-        self, runner: CliRunner, tmp_path: Path
-    ) -> None:
+    def test_missing_parent_exits_3(self, runner: CliRunner, tmp_path: Path) -> None:
         input_file = _touch(tmp_path, "episode.mp3")
         output_path = tmp_path / "does-not-exist" / "episode.md"
-        result = runner.invoke(
-            app, [str(input_file), "--lang", "es", "-o", str(output_path)]
-        )
+        result = runner.invoke(app, [str(input_file), "--lang", "es", "-o", str(output_path)])
         assert result.exit_code == 3, f"stderr={result.stderr!r}"
 
     def test_missing_parent_message_names_directory(
@@ -379,20 +369,14 @@ class TestMissingParentDir:
     ) -> None:
         input_file = _touch(tmp_path, "episode.mp3")
         output_path = tmp_path / "does-not-exist" / "episode.md"
-        result = runner.invoke(
-            app, [str(input_file), "--lang", "es", "-o", str(output_path)]
-        )
+        result = runner.invoke(app, [str(input_file), "--lang", "es", "-o", str(output_path)])
         assert "does-not-exist" in result.stderr, f"stderr={result.stderr!r}"
 
-    def test_missing_parent_creates_no_directories(
-        self, runner: CliRunner, tmp_path: Path
-    ) -> None:
+    def test_missing_parent_creates_no_directories(self, runner: CliRunner, tmp_path: Path) -> None:
         input_file = _touch(tmp_path, "episode.mp3")
         missing_parent = tmp_path / "does-not-exist"
         output_path = missing_parent / "episode.md"
-        runner.invoke(
-            app, [str(input_file), "--lang", "es", "-o", str(output_path)]
-        )
+        runner.invoke(app, [str(input_file), "--lang", "es", "-o", str(output_path)])
         assert not missing_parent.exists(), "cli must not create the missing parent"
 
     def test_missing_parent_with_force_still_exits_3(
@@ -412,8 +396,6 @@ class TestMissingParentDir:
     ) -> None:
         input_file = _touch(tmp_path, "episode.mp3")
         output_path = tmp_path / "does-not-exist" / "episode.md"
-        result = runner.invoke(
-            app, [str(input_file), "--lang", "es", "-o", str(output_path)]
-        )
+        result = runner.invoke(app, [str(input_file), "--lang", "es", "-o", str(output_path)])
         assert "event=input_io_error" in result.stderr
         assert "code=3" in result.stderr

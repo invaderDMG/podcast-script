@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Annotated
 
 import typer
 
-from .errors import PodcastScriptError, UsageError
+from .errors import InputIOError, OutputExistsError, PodcastScriptError, UsageError
 from .logging_setup import Verbosity, configure
 from .segment import Segment
 
@@ -139,6 +139,35 @@ def _levenshtein(a: str, b: str) -> int:
             current.append(min(insert, delete, substitute))
         previous = current
     return previous[-1]
+
+
+def _check_output_path(resolved_output: Path, *, force: bool) -> None:
+    """Pre-flight gate for the resolved output path (POD-022, US-6).
+
+    Two ACs are enforced before the pipeline starts so a misconfigured
+    invocation costs nothing more than an exit code:
+
+    * AC-US-6.4 — parent directory must already exist (the cli MUST NOT
+      create it); raises :class:`InputIOError` (exit 3). Holds with or
+      without ``--force``.
+    * AC-US-6.1 — if the path already exists and ``--force``/``-f`` was
+      not passed, raise :class:`OutputExistsError` (exit 6); the prior
+      file is therefore left untouched.
+
+    Order matters: a missing parent makes the existence check
+    meaningless, so it is reported first and only then is overwrite
+    refused.
+    """
+    parent = resolved_output.parent
+    if not parent.is_dir():
+        raise InputIOError(
+            f"output parent directory does not exist: {parent}; "
+            "create it before re-running, or pass -o/--output with an existing parent"
+        )
+    if resolved_output.exists() and not force:
+        raise OutputExistsError(
+            f"refusing to overwrite existing file {resolved_output}; pass --force / -f to opt in"
+        )
 
 
 def _resolve_verbosity(verbose: bool, quiet: bool, debug: bool) -> Verbosity:
@@ -313,6 +342,7 @@ def main(
         validate_lang(lang)
 
         resolved_output = output if output is not None else input_path.with_suffix(".md")
+        _check_output_path(resolved_output, force=force)
         _run_pipeline(
             input_path=input_path,
             output_path=resolved_output,

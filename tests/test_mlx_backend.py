@@ -15,12 +15,22 @@ from __future__ import annotations
 import importlib
 import logging
 import sys
+from collections.abc import Iterable, Iterator
 from typing import Any
 
+import numpy as np
+import numpy.typing as npt
 import pytest
 
+from podcast_script.backends.base import TranscribedSegment
 from podcast_script.backends.mlx import MlxWhisperBackend
 from podcast_script.errors import ModelError
+
+SAMPLE_RATE = 16_000
+
+
+def _silence_pcm(duration_s: float) -> npt.NDArray[np.float32]:
+    return np.zeros(int(duration_s * SAMPLE_RATE), dtype=np.float32)
 
 # ---------------------------------------------------------------------------
 # ADR-0011 — module-level lazy-import boundary
@@ -114,6 +124,124 @@ def test_load_caches_model_across_calls() -> None:
     backend.load(model="tiny", device="cpu")
 
     assert build_calls == 1
+
+
+# ---------------------------------------------------------------------------
+# ADR-0003 / ADR-0004 — transcribe() shape (Iterable[TranscribedSegment])
+# ---------------------------------------------------------------------------
+
+
+class _FakeMlxSegment:
+    """Stand-in for one ``mlx_whisper`` segment object.
+
+    The real lib emits dicts (``{"start", "end", "text", ...}``) inside
+    the ``"segments"`` list of the ``transcribe`` result. The backend's
+    ``_run_inference`` seam adapts those dicts into objects matching
+    this duck type (``.start``, ``.end``, ``.text`` attributes) so
+    ``transcribe()`` is symmetric with the faster-whisper sibling — the
+    unit test exercises ``transcribe()`` directly through this stub.
+    """
+
+    def __init__(self, start: float, end: float, text: str) -> None:
+        self.start = start
+        self.end = end
+        self.text = text
+
+
+def _make_backend_with_canned_segments(
+    segments: list[_FakeMlxSegment],
+) -> MlxWhisperBackend:
+    """Build a backend whose ``_run_inference`` returns ``segments``.
+
+    The seam is the ``_run_inference`` hook so unit tests don't depend
+    on ``mlx_whisper.transcribe``'s API shape (which returns a dict and
+    re-loads from ``path_or_hf_repo``).
+    """
+
+    class _CannedBackend(MlxWhisperBackend):
+        def _build_model(self, model: str, device: str) -> object:
+            return object()
+
+        def _run_inference(
+            self,
+            model: object,
+            pcm: npt.NDArray[np.float32],
+            lang: str,
+        ) -> Iterable[_FakeMlxSegment]:
+            return iter(segments)
+
+    backend = _CannedBackend()
+    backend.load(model="tiny", device="cpu")
+    return backend
+
+
+def test_transcribe_yields_typed_segments() -> None:
+    """ADR-0003: ``transcribe`` MUST yield :class:`TranscribedSegment`
+    triples (``start``, ``end``, ``text``) — not the raw library dict.
+    The Pipeline (POD-008) consumes the abstraction, never the lib.
+    """
+    canned = [
+        _FakeMlxSegment(start=0.0, end=2.5, text="hola"),
+        _FakeMlxSegment(start=2.5, end=4.0, text="qué tal"),
+    ]
+    backend = _make_backend_with_canned_segments(canned)
+
+    out = list(backend.transcribe(_silence_pcm(4.0), lang="es"))
+
+    assert out == [
+        TranscribedSegment(start=0.0, end=2.5, text="hola"),
+        TranscribedSegment(start=2.5, end=4.0, text="qué tal"),
+    ]
+
+
+def test_transcribe_streams_lazily_per_ADR_0004() -> None:
+    """ADR-0004: ``transcribe`` is a streaming contract — segments are
+    yielded one-by-one, not buffered. The Pipeline relies on this for
+    per-segment progress ticks (POD-013, ADR-0010). Stub the underlying
+    iterator so we can assert items arrive incrementally.
+    """
+    yielded_count = 0
+
+    def _generator() -> Iterator[_FakeMlxSegment]:
+        nonlocal yielded_count
+        for seg in [
+            _FakeMlxSegment(0.0, 1.0, "uno"),
+            _FakeMlxSegment(1.0, 2.0, "dos"),
+        ]:
+            yielded_count += 1
+            yield seg
+
+    class _StreamingBackend(MlxWhisperBackend):
+        def _build_model(self, model: str, device: str) -> object:
+            return object()
+
+        def _run_inference(
+            self,
+            model: object,
+            pcm: npt.NDArray[np.float32],
+            lang: str,
+        ) -> Iterable[_FakeMlxSegment]:
+            return _generator()
+
+    backend = _StreamingBackend()
+    backend.load(model="tiny", device="cpu")
+    stream = backend.transcribe(_silence_pcm(2.0), lang="es")
+
+    first = next(iter(stream))
+    assert first.text == "uno"
+    assert yielded_count == 1
+
+
+def test_transcribe_before_load_raises_model_error() -> None:
+    """Calling :meth:`transcribe` before :meth:`load` is a programming
+    error in the orchestrator (the Pipeline always calls ``load()``
+    first per ADR-0009). Surface as :class:`ModelError` rather than a
+    ``None``-attribute traceback so the cli's NFR-9 mapping holds.
+    """
+    backend = MlxWhisperBackend()
+
+    with pytest.raises(ModelError, match="load"):
+        list(backend.transcribe(_silence_pcm(1.0), lang="es"))
 
 
 # ---------------------------------------------------------------------------

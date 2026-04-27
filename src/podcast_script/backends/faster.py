@@ -15,7 +15,44 @@ when the upstream library API drifts (R-17).
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
+from typing import TYPE_CHECKING, Protocol, cast
+
+import numpy as np
+import numpy.typing as npt
+
 from ..errors import ModelError
+from .base import TranscribedSegment
+
+
+class _FasterSegment(Protocol):
+    """Structural contract for one ``faster_whisper`` segment.
+
+    The real lib emits objects with ``.start``, ``.end``, ``.text``
+    attributes. Declared at module top (not under ``TYPE_CHECKING``)
+    because tests stub this surface with their own duck-types and
+    structural compatibility is the contract — no heavy lib imported.
+    """
+
+    start: float
+    end: float
+    text: str
+
+
+if TYPE_CHECKING:
+
+    class _FasterWhisperModel(Protocol):
+        """Structural contract for the ``faster_whisper.WhisperModel``.
+
+        ``transcribe`` returns a 2-tuple of ``(segments_iter, info)`` —
+        the pipeline never reads ``info`` so we elide it as ``object``.
+        """
+
+        def transcribe(
+            self,
+            audio: npt.NDArray[np.float32],
+            language: str,
+        ) -> tuple[Iterable[_FasterSegment], object]: ...
 
 
 class FasterWhisperBackend:
@@ -69,3 +106,49 @@ class FasterWhisperBackend:
         from faster_whisper import WhisperModel  # type: ignore[import-untyped]
 
         return WhisperModel(model, device=device)
+
+    def transcribe(
+        self,
+        pcm: npt.NDArray[np.float32],
+        lang: str,
+        sample_rate: int = 16000,
+    ) -> Iterator[TranscribedSegment]:
+        """Transcribe one mono float32 PCM slice (ADR-0003 / ADR-0004).
+
+        Yields :class:`TranscribedSegment` triples lazily — the underlying
+        ``WhisperModel.transcribe`` returns a generator and we re-shape
+        each item without buffering. The Pipeline (POD-008) feeds one
+        speech segment at a time per ADR-0004 streaming contract, and
+        the per-segment progress tick (POD-013, ADR-0010) relies on the
+        lazy yield to advance smoothly.
+        """
+        if self._model is None:
+            raise ModelError(
+                "FasterWhisperBackend.transcribe() called before load(); "
+                "the orchestrator must call load() first per ADR-0009."
+            )
+        raw = self._run_inference(self._model, pcm, lang)
+        for seg in raw:
+            yield TranscribedSegment(
+                start=float(seg.start),
+                end=float(seg.end),
+                text=str(seg.text),
+            )
+
+    def _run_inference(
+        self,
+        model: object,
+        pcm: npt.NDArray[np.float32],
+        lang: str,
+    ) -> Iterable[_FasterSegment]:
+        """Run ``model.transcribe`` and return the segment iterator.
+
+        Override-point for unit tests. The real ``WhisperModel.transcribe``
+        returns a ``(segments, info)`` 2-tuple; the pipeline only needs
+        the iterator so we drop ``info`` here. POD-030 (Tier 2 contract,
+        SP-6) verifies the real-lib path against the same ``transcribe``
+        contract this seam shapes.
+        """
+        real_model = cast("_FasterWhisperModel", model)
+        segments, _info = real_model.transcribe(pcm, language=lang)
+        return segments

@@ -12,12 +12,14 @@ from __future__ import annotations
 
 import importlib
 import sys
+from collections.abc import Iterable, Iterator
 
 import numpy as np
 import numpy.typing as npt
 import pytest
 
 from podcast_script.backends.base import TranscribedSegment
+from podcast_script.backends.faster import FasterWhisperBackend
 from podcast_script.errors import ModelError
 
 SAMPLE_RATE = 16_000
@@ -25,6 +27,7 @@ SAMPLE_RATE = 16_000
 
 def _silence_pcm(duration_s: float) -> npt.NDArray[np.float32]:
     return np.zeros(int(duration_s * SAMPLE_RATE), dtype=np.float32)
+
 
 # ---------------------------------------------------------------------------
 # ADR-0011 — module-level lazy-import boundary
@@ -66,23 +69,13 @@ def test_constructor_does_not_import_faster_whisper() -> None:
 # ---------------------------------------------------------------------------
 
 
-class _StubFasterBackend:
-    """Test seam over ``FasterWhisperBackend`` that overrides the loader.
-
-    Subclasses the real backend so we can stub :meth:`_build_model` without
-    touching the heavy ``faster_whisper`` import. Mirrors the
-    ``_StubInaSegmenter`` pattern in ``tests/test_segment.py``.
-    """
-
-
-def _make_backend_with_build_error(error: Exception) -> object:
+def _make_backend_with_build_error(error: Exception) -> FasterWhisperBackend:
     """Build a backend whose ``_build_model`` raises ``error`` on load.
 
     Helper kept here (rather than in conftest) because no other test file
     needs it; POD-030 (Tier 2 contract) tests will run against the real
     backend, not via this seam.
     """
-    from podcast_script.backends.faster import FasterWhisperBackend
 
     class _ErrorBackend(FasterWhisperBackend):
         def _build_model(self, model: str, device: str) -> object:
@@ -103,7 +96,7 @@ def test_load_wraps_import_error_in_model_error() -> None:
     )
 
     with pytest.raises(ModelError) as exc_info:
-        backend.load(model="tiny", device="cpu")  # type: ignore[attr-defined]
+        backend.load(model="tiny", device="cpu")
 
     assert isinstance(exc_info.value.__cause__, ImportError)
     assert "faster-whisper" in str(exc_info.value)
@@ -115,8 +108,6 @@ def test_load_caches_model_across_calls() -> None:
     per run today (ADR-0009), but in-process re-use (e.g. a future batch
     mode) must not pay the cost twice.
     """
-    from podcast_script.backends.faster import FasterWhisperBackend
-
     build_calls = 0
 
     class _CountingBackend(FasterWhisperBackend):
@@ -153,14 +144,13 @@ class _FakeFasterSegment:
 
 def _make_backend_with_canned_segments(
     segments: list[_FakeFasterSegment],
-) -> object:
+) -> FasterWhisperBackend:
     """Build a backend whose loaded ``_model`` returns ``segments``.
 
     Mirrors how ``faster_whisper.WhisperModel.transcribe`` returns
     ``(segments_iter, info)`` — the seam is the ``_run_inference`` hook
     so unit tests don't depend on the lib's API shape.
     """
-    from podcast_script.backends.faster import FasterWhisperBackend
 
     class _CannedBackend(FasterWhisperBackend):
         def _build_model(self, model: str, device: str) -> object:
@@ -171,11 +161,11 @@ def _make_backend_with_canned_segments(
             model: object,
             pcm: npt.NDArray[np.float32],
             lang: str,
-        ) -> object:
+        ) -> Iterable[_FakeFasterSegment]:
             return iter(segments)
 
     backend = _CannedBackend()
-    backend.load(model="tiny", device="cpu")  # type: ignore[attr-defined]
+    backend.load(model="tiny", device="cpu")
     return backend
 
 
@@ -190,7 +180,7 @@ def test_transcribe_yields_typed_segments() -> None:
     ]
     backend = _make_backend_with_canned_segments(canned)
 
-    out = list(backend.transcribe(_silence_pcm(4.0), lang="es"))  # type: ignore[attr-defined]
+    out = list(backend.transcribe(_silence_pcm(4.0), lang="es"))
 
     assert out == [
         TranscribedSegment(start=0.0, end=2.5, text="hola"),
@@ -206,7 +196,7 @@ def test_transcribe_streams_lazily_per_ADR_0004() -> None:
     """
     yielded_count = 0
 
-    def _generator() -> object:
+    def _generator() -> Iterator[_FakeFasterSegment]:
         nonlocal yielded_count
         for seg in [
             _FakeFasterSegment(0.0, 1.0, "uno"),
@@ -214,8 +204,6 @@ def test_transcribe_streams_lazily_per_ADR_0004() -> None:
         ]:
             yielded_count += 1
             yield seg
-
-    from podcast_script.backends.faster import FasterWhisperBackend
 
     class _StreamingBackend(FasterWhisperBackend):
         def _build_model(self, model: str, device: str) -> object:
@@ -226,7 +214,7 @@ def test_transcribe_streams_lazily_per_ADR_0004() -> None:
             model: object,
             pcm: npt.NDArray[np.float32],
             lang: str,
-        ) -> object:
+        ) -> Iterable[_FakeFasterSegment]:
             return _generator()
 
     backend = _StreamingBackend()
@@ -246,8 +234,6 @@ def test_transcribe_before_load_raises_model_error() -> None:
     first per ADR-0009). Surface as :class:`ModelError` rather than a
     ``None``-attribute traceback so the cli's NFR-9 mapping holds.
     """
-    from podcast_script.backends.faster import FasterWhisperBackend
-
     backend = FasterWhisperBackend()
 
     with pytest.raises(ModelError, match="load"):

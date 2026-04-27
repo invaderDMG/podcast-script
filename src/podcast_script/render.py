@@ -34,15 +34,18 @@ from .segment import Segment
 
 TimestampFormat = Literal["MM:SS", "HH:MM:SS"]
 
-# Tie-breakers when two events share a timestamp (SRS §1.6 ordering):
-# - music ends first (closes the open marker before anything new),
-# - then music starts (opens the next marker),
-# - then speech text (appears at or after any markers active at that t).
-_PRIO_MUSIC_END = 0
-_PRIO_MUSIC_START = 1
-_PRIO_SPEECH = 2
-
 _EventKind = Literal["music_start", "music_end", "speech"]
+
+# Tie-breakers when two events share a timestamp (SRS §1.6 ordering):
+# music ends first (closes the open marker), then music starts (opens
+# the next), then speech text (appears at or after any markers active
+# at that t). Single source of truth — keeps `_Event` to one concept
+# per field.
+_PRIO_BY_KIND: dict[_EventKind, int] = {
+    "music_end": 0,
+    "music_start": 1,
+    "speech": 2,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,7 +53,6 @@ class _Event:
     """One renderable line plus its sort key."""
 
     time_s: float
-    priority: int
     kind: _EventKind
     line: str
 
@@ -84,7 +86,7 @@ def render(
     # speech transcripts at the same start time stay in their pipeline
     # order (which is the per-segment order from ADR-0004's streaming
     # contract).
-    events.sort(key=lambda e: (e.time_s, e.priority))
+    events.sort(key=lambda e: (e.time_s, _PRIO_BY_KIND[e.kind]))
     return _join_with_block_separators(events)
 
 
@@ -105,7 +107,6 @@ def _build_events(
         events.append(
             _Event(
                 time_s=seg.start,
-                priority=_PRIO_MUSIC_START,
                 kind="music_start",
                 line=f"> [{_fmt_ts(seg.start, fmt)} — music starts]",
             )
@@ -113,7 +114,6 @@ def _build_events(
         events.append(
             _Event(
                 time_s=seg.end,
-                priority=_PRIO_MUSIC_END,
                 kind="music_end",
                 line=f"> [{_fmt_ts(seg.end, fmt)} — music ends]",
             )
@@ -122,7 +122,6 @@ def _build_events(
         events.append(
             _Event(
                 time_s=ts.start,
-                priority=_PRIO_SPEECH,
                 kind="speech",
                 line=f"`{_fmt_ts(ts.start, fmt)}`  {ts.text}",
             )

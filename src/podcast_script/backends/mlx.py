@@ -91,11 +91,20 @@ class MlxWhisperBackend:
     def load(self, model: str, device: str) -> None:
         """Resolve and load the requested model (ADR-0009 / ADR-0011).
 
-        Subsequent calls are a no-op (cached model). Wraps
-        ``ImportError`` from the heavy ``mlx_whisper`` / ``mlx`` /
-        ``huggingface_hub`` chain into :class:`ModelError` so
-        ``cli.py``'s NFR-9 translation maps it to exit code 5 with a
-        useful message instead of the unexpected-internal fallback.
+        On a first call, runs the AC-US-5.1 cache check via
+        :meth:`_is_cached` and emits the locked ``event=model_download``
+        notice (ADR-0012) before any heavy import — so NFR-6's 1-s
+        budget holds even when the HF download is slow. Subsequent
+        calls are a no-op. Wraps the universe of failure modes that
+        ``mlx_whisper`` + ``huggingface_hub`` surface (``ImportError``
+        from the lib chain, ``OSError`` from disk / cache, network /
+        HTTP errors, library API drift) into :class:`ModelError` so
+        ``cli.py``'s NFR-9 translation maps them all to exit code 5
+        with a useful message (AC-US-5.4).
+
+        ``KeyboardInterrupt`` and ``SystemExit`` propagate untouched per
+        ADR-0014 (Ctrl-C is the user's contract; AC-US-5.3 resume /
+        restart is on the user, not us).
 
         ``device`` is accepted for Protocol symmetry with
         :class:`~podcast_script.backends.faster.FasterWhisperBackend`
@@ -116,6 +125,18 @@ class MlxWhisperBackend:
                 f"mlx-whisper (or one of its dependencies: mlx, "
                 f"huggingface_hub) is not installed — run `uv sync` on "
                 f"an Apple Silicon machine. Cannot load model '{model}'."
+            ) from e
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception as e:
+            # huggingface_hub spans a wide exception vocabulary
+            # (httpx.ConnectError, HfHubHTTPError, OSError, ...). Any
+            # non-ImportError failure during model resolution is a
+            # ModelError (exit 5) per AC-US-5.4. R-17 (mlx-whisper API
+            # drift) is also covered by this broad wrap — surfacing the
+            # original via __cause__ keeps the trace debuggable.
+            raise ModelError(
+                f"Failed to load mlx-whisper model '{model}': {type(e).__name__}: {e}"
             ) from e
         self._model_name = model
 

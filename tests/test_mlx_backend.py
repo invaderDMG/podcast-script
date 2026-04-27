@@ -73,12 +73,14 @@ def test_constructor_does_not_import_mlx_whisper() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _make_backend_with_build_error(error: Exception) -> MlxWhisperBackend:
+def _make_backend_with_build_error(error: BaseException) -> MlxWhisperBackend:
     """Build a backend whose ``_build_model`` raises ``error`` on load.
 
-    Helper kept here (rather than in conftest) because no other test file
-    needs it; POD-030 (Tier 2 contract) tests will run against the real
-    backend, not via this seam.
+    Accepts :class:`BaseException` (not just :class:`Exception`) so the
+    ADR-0014 propagation test can drive ``KeyboardInterrupt`` through
+    the same seam. Helper kept here (rather than in conftest) because
+    no other test file needs it; POD-030 (Tier 2 contract) tests will
+    run against the real backend, not via this seam.
     """
 
     class _ErrorBackend(MlxWhisperBackend):

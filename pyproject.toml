@@ -50,6 +50,14 @@ python_version = "3.12"
 strict = true
 files = ["src", "tests"]
 
+# mlx-whisper is darwin/arm64-only (PEP 508 marker in [project]) and
+# ships no type stubs. Waiving missing-imports and missing-stubs here
+# so strict mode stays clean on Ubuntu CI (where mlx_whisper is not
+# installed) and on macOS CI (where it is installed but untyped).
+[[tool.mypy.overrides]]
+module = ["mlx_whisper", "mlx_whisper.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = ["-ra", "--strict-markers", "--strict-config"]

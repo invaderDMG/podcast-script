@@ -20,6 +20,12 @@ when the upstream library API drifts (R-17).
 
 from __future__ import annotations
 
+import logging
+
+from ..errors import ModelError
+
+_log = logging.getLogger(__name__)
+
 
 class MlxWhisperBackend:
     """``mlx-whisper``-backed implementation of
@@ -27,8 +33,57 @@ class MlxWhisperBackend:
 
     Construction is cheap — the heavy ``mlx_whisper`` import does not
     happen until :meth:`load` is called (ADR-0011 first-use site). The
-    later TDD cycles in POD-020 add :meth:`load` and :meth:`transcribe`
-    on top of this skeleton.
+    ``transcribe`` method (POD-020 follow-up cycle) iterates the
+    underlying ``mlx_whisper.transcribe`` segments and re-shapes them as
+    :class:`~podcast_script.backends.base.TranscribedSegment` triples
+    per ADR-0003.
     """
 
     name = "mlx-whisper"
+
+    def __init__(self) -> None:
+        self._model: object | None = None
+        self._model_name: str | None = None
+
+    def load(self, model: str, device: str) -> None:
+        """Resolve and load the requested model (ADR-0009 / ADR-0011).
+
+        Subsequent calls are a no-op (cached model). Wraps
+        ``ImportError`` from the heavy ``mlx_whisper`` / ``mlx`` /
+        ``huggingface_hub`` chain into :class:`ModelError` so
+        ``cli.py``'s NFR-9 translation maps it to exit code 5 with a
+        useful message instead of the unexpected-internal fallback.
+
+        ``device`` is accepted for Protocol symmetry with
+        :class:`~podcast_script.backends.faster.FasterWhisperBackend`
+        but unused: ``mlx_whisper`` always runs on the unified-memory
+        Apple Silicon GPU.
+        """
+        if self._model is not None:
+            return
+        try:
+            self._model = self._build_model(model, device)
+        except ImportError as e:
+            raise ModelError(
+                f"mlx-whisper (or one of its dependencies: mlx, "
+                f"huggingface_hub) is not installed — run `uv sync` on "
+                f"an Apple Silicon machine. Cannot load model '{model}'."
+            ) from e
+        self._model_name = model
+
+    def _build_model(self, model: str, device: str) -> object:
+        """Construct (download + load) the underlying ``mlx_whisper`` model.
+
+        Override-point for unit tests (subclass and replace this method
+        to return a stub model without touching the heavy chain).
+        Production code path triggers the lazy ``mlx_whisper`` import
+        here and delegates HF cache lookup + first-run download to
+        ``mlx_whisper.load_models.load_model``.
+        """
+        # ``mlx_whisper`` is darwin-arm64-only via the PEP 508 marker
+        # in ``pyproject.toml``; ``[[tool.mypy.overrides]]`` waives
+        # missing-imports and missing-stubs uniformly across CI
+        # platforms (Ubuntu: not installed; macOS: installed, untyped).
+        from mlx_whisper.load_models import load_model
+
+        return load_model(model)

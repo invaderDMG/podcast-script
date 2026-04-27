@@ -32,6 +32,7 @@ SAMPLE_RATE = 16_000
 def _silence_pcm(duration_s: float) -> npt.NDArray[np.float32]:
     return np.zeros(int(duration_s * SAMPLE_RATE), dtype=np.float32)
 
+
 # ---------------------------------------------------------------------------
 # ADR-0011 — module-level lazy-import boundary
 # ---------------------------------------------------------------------------

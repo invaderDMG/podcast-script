@@ -21,11 +21,53 @@ when the upstream library API drifts (R-17).
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable, Iterator, Mapping
+from typing import Any, Protocol
+
+import numpy as np
+import numpy.typing as npt
 
 from ..errors import ModelError
-from .base import emit_first_run_notice_if_missing
+from .base import TranscribedSegment, emit_first_run_notice_if_missing
 
 _log = logging.getLogger(__name__)
+
+
+class _MlxSegment(Protocol):
+    """Structural contract for one mlx-whisper segment.
+
+    ``mlx_whisper.transcribe`` returns dicts in its ``"segments"`` list;
+    ``_run_inference`` adapts them into objects matching this Protocol
+    so :meth:`MlxWhisperBackend.transcribe` is symmetric with the
+    faster-whisper sibling. Declared at module top (not under
+    ``TYPE_CHECKING``) so unit tests can stub the surface with their
+    own duck-types — structural compatibility is the contract.
+    """
+
+    start: float
+    end: float
+    text: str
+
+
+class _MlxSegmentTriple:
+    """Concrete :class:`_MlxSegment` used by the production path.
+
+    The real-library branch of :meth:`MlxWhisperBackend._run_inference`
+    wraps each ``mlx_whisper`` segment dict in one of these — turning
+    ``seg["start"]`` into ``triple.start`` so :meth:`.transcribe` can
+    consume any :class:`_MlxSegment` (real triples or test fakes) by
+    attribute access. A plain class (not :class:`NamedTuple` /
+    ``frozen=True`` dataclass) is used so the read-only-vs-settable
+    variance check in :class:`_MlxSegment` stays satisfied without
+    declaring every attribute as a ``@property``.
+    """
+
+    __slots__ = ("end", "start", "text")
+
+    def __init__(self, start: float, end: float, text: str) -> None:
+        self.start = start
+        self.end = end
+        self.text = text
 
 
 class MlxWhisperBackend:
@@ -124,3 +166,69 @@ class MlxWhisperBackend:
         from mlx_whisper.load_models import load_model
 
         return load_model(model)
+
+    def transcribe(
+        self,
+        pcm: npt.NDArray[np.float32],
+        lang: str,
+        sample_rate: int = 16000,
+    ) -> Iterator[TranscribedSegment]:
+        """Transcribe one mono float32 PCM slice (ADR-0003 / ADR-0004).
+
+        Yields :class:`TranscribedSegment` triples lazily — the
+        underlying ``_run_inference`` is iterable, and we re-shape each
+        item without buffering. The Pipeline (POD-008) feeds one speech
+        segment at a time per ADR-0004 streaming contract, and the
+        per-segment progress tick (POD-013, ADR-0010) relies on the lazy
+        yield to advance smoothly.
+        """
+        if self._model is None:
+            raise ModelError(
+                "MlxWhisperBackend.transcribe() called before load(); "
+                "the orchestrator must call load() first per ADR-0009."
+            )
+        raw = self._run_inference(self._model, pcm, lang)
+        for seg in raw:
+            yield TranscribedSegment(
+                start=float(seg.start),
+                end=float(seg.end),
+                text=str(seg.text),
+            )
+
+    def _run_inference(
+        self,
+        model: object,
+        pcm: npt.NDArray[np.float32],
+        lang: str,
+    ) -> Iterable[_MlxSegment]:
+        """Run ``mlx_whisper.transcribe`` and yield duck-typed segments.
+
+        Override-point for unit tests. ``mlx_whisper.transcribe`` is a
+        function (not a method on the loaded model); it returns a dict
+        with a ``"segments"`` list of dicts. We adapt those dicts into
+        :class:`_MlxSegmentTriple` instances so :meth:`transcribe` can
+        consume the same attribute interface as the faster-whisper
+        sibling.
+
+        ``model`` is unused here — ``mlx_whisper.transcribe`` re-loads
+        from ``path_or_hf_repo`` each call (it has its own module-level
+        cache); we pass ``self._model_name`` for that purpose. The
+        argument is kept for seam symmetry with the faster sibling.
+        """
+        import mlx_whisper
+
+        if self._model_name is None:
+            raise ModelError(
+                "MlxWhisperBackend internal state is invalid: _model_name unset after load()."
+            )
+        result: Mapping[str, Any] = mlx_whisper.transcribe(
+            pcm,
+            path_or_hf_repo=self._model_name,
+            language=lang,
+        )
+        for seg in result.get("segments", []):
+            yield _MlxSegmentTriple(
+                start=float(seg["start"]),
+                end=float(seg["end"]),
+                text=str(seg["text"]),
+            )

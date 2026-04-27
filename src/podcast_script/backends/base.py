@@ -83,7 +83,17 @@ class WhisperBackend(Protocol):
 # ---------------------------------------------------------------------------
 
 
-MODEL_SIZES_GB: dict[str, float] = {}
+MODEL_SIZES_GB: dict[str, float] = {
+    "tiny": 0.075,
+    "base": 0.14,
+    "small": 0.46,
+    "medium": 1.5,
+    "large": 3.0,
+    "large-v1": 3.0,
+    "large-v2": 3.0,
+    "large-v3": 3.0,
+    "large-v3-turbo": 1.6,
+}
 """Approximate on-disk sizes for v1-supported Whisper models.
 
 Used by :func:`emit_first_run_notice_if_missing` to populate the
@@ -91,6 +101,14 @@ Used by :func:`emit_first_run_notice_if_missing` to populate the
 (ADR-0012). Values are deliberately coarse — the precise indicator is
 ``huggingface_hub``'s download progress bar that follows the notice.
 Adding a model post-v1 is a minor change; removing one is breaking.
+"""
+
+_UNKNOWN_MODEL_SIZE_GB = 1.0
+"""Fallback size used when the user passes a model name we don't track.
+
+Conservative: the user gets warned a download may be coming, then sees
+``huggingface_hub``'s real progress bar, rather than us silently letting
+a multi-GB transfer surprise them.
 """
 
 
@@ -109,7 +127,19 @@ def emit_first_run_notice_if_missing(
     (POD-030, SP-6) substitute a synthetic miss to verify the contract
     without touching the real HF cache.
 
-    Scaffold for POD-021: emits nothing until the implementation cycle
-    lands.
+    The emitted record carries the locked ADR-0012 shape: ``event``,
+    ``model``, ``size_gb``. ``size_gb`` is rendered with ``{:g}`` so
+    round numbers ship bare (``3``) and fractional sizes keep their
+    decimals (``0.075``).
     """
-    del model, is_cached, logger
+    if is_cached(model):
+        return
+    size_gb = MODEL_SIZES_GB.get(model, _UNKNOWN_MODEL_SIZE_GB)
+    logger.info(
+        "",
+        extra={
+            "event": "model_download",
+            "model": model,
+            "size_gb": f"{size_gb:g}",
+        },
+    )

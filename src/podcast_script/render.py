@@ -55,4 +55,23 @@ def render(
 
     Pure function — no I/O, no logging, no global state.
     """
-    return ""
+    lines: list[str] = []
+    for seg in segments:
+        if seg.label == "music":
+            lines.append(f"> [{_fmt_ts(seg.start, fmt)} — music starts]")
+            lines.append(f"> [{_fmt_ts(seg.end, fmt)} — music ends]")
+    for ts in transcripts:
+        lines.append(f"`{_fmt_ts(ts.start, fmt)}`  {ts.text}")
+    if not lines:
+        return ""
+    return "\n".join(lines) + "\n"
+
+
+def _fmt_ts(seconds: float, fmt: TimestampFormat) -> str:
+    """Format ``seconds`` as ``MM:SS`` or ``HH:MM:SS`` per ``fmt``."""
+    total = int(seconds)
+    hh, rem = divmod(total, 3600)
+    mm, ss = divmod(rem, 60)
+    if fmt == "HH:MM:SS":
+        return f"{hh:02d}:{mm:02d}:{ss:02d}"
+    return f"{hh * 60 + mm:02d}:{ss:02d}"

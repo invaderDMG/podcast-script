@@ -15,6 +15,8 @@ when the upstream library API drifts (R-17).
 
 from __future__ import annotations
 
+from ..errors import ModelError
+
 
 class FasterWhisperBackend:
     """``faster-whisper``-backed implementation of :class:`WhisperBackend`.
@@ -31,3 +33,39 @@ class FasterWhisperBackend:
     def __init__(self) -> None:
         self._model: object | None = None
         self._model_name: str | None = None
+
+    def load(self, model: str, device: str) -> None:
+        """Resolve and load the requested model (ADR-0009 / ADR-0011).
+
+        Subsequent calls are a no-op — the heavy build path runs once per
+        process. Wraps the universe of failure modes that ``faster_whisper``
+        + ``huggingface_hub`` surface (``ImportError`` from the lib chain,
+        ``OSError`` from disk / cache, network / HTTP errors, library API
+        drift) into :class:`ModelError` so ``cli.py``'s NFR-9 translation
+        maps them all to exit code 5 with a useful message.
+        """
+        if self._model is not None:
+            return
+        try:
+            self._model = self._build_model(model, device)
+        except ImportError as e:
+            raise ModelError(
+                f"faster-whisper (or one of its dependencies: CTranslate2, "
+                f"tokenizers, huggingface_hub) is not installed — run "
+                f"`uv sync`. Cannot load model '{model}'."
+            ) from e
+        self._model_name = model
+
+    def _build_model(self, model: str, device: str) -> object:
+        """Construct the underlying ``faster_whisper.WhisperModel``.
+
+        Override-point for unit tests (subclass and replace this method to
+        return a stub model without touching the heavy chain). Production
+        code path triggers the lazy ``faster_whisper`` import here and
+        delegates model resolution + cache lookup + first-run download to
+        ``WhisperModel.__init__`` (which uses ``huggingface_hub`` under
+        the hood).
+        """
+        from faster_whisper import WhisperModel  # type: ignore[import-untyped]
+
+        return WhisperModel(model, device=device)

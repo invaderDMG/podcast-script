@@ -88,19 +88,21 @@ MODEL_SIZES_GB: dict[str, float] = {
     "base": 0.14,
     "small": 0.46,
     "medium": 1.5,
-    "large": 3.0,
-    "large-v1": 3.0,
-    "large-v2": 3.0,
     "large-v3": 3.0,
     "large-v3-turbo": 1.6,
 }
-"""Approximate on-disk sizes for v1-supported Whisper models.
+"""Approximate on-disk sizes for the v1-supported Whisper models.
 
 Used by :func:`emit_first_run_notice_if_missing` to populate the
 ``size_gb`` token of the locked ``event=model_download`` shape
 (ADR-0012). Values are deliberately coarse — the precise indicator is
 ``huggingface_hub``'s download progress bar that follows the notice.
 Adding a model post-v1 is a minor change; removing one is breaking.
+
+Older Whisper variants (``large``, ``large-v1``, ``large-v2``) are
+intentionally absent — passing one falls back to
+:data:`_UNKNOWN_MODEL_SIZE_GB` so the user still sees a notice. Adding
+them now would lock them into the v1.0.0 SemVer surface.
 """
 
 _UNKNOWN_MODEL_SIZE_GB = 1.0

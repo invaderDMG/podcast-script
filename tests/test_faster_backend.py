@@ -432,9 +432,7 @@ def test_load_skips_cache_check_on_repeat_call() -> None:
     backend.load(model="large-v3", device="cpu")
     backend.load(model="large-v3", device="cpu")
 
-    assert cache_calls == ["large-v3"], (
-        "second load() must short-circuit before _is_cached re-runs"
-    )
+    assert cache_calls == ["large-v3"], "second load() must short-circuit before _is_cached re-runs"
     notices = [r for r in records if getattr(r, "event", None) == "model_download"]
     assert len(notices) == 1
 
@@ -459,7 +457,7 @@ def test_default_is_cached_uses_huggingface_hub_scan(
 
     fake_cache = _FakeCacheInfo([_FakeRepo("Systran/faster-whisper-large-v3")])
 
-    import huggingface_hub  # type: ignore[import-untyped]
+    import huggingface_hub
 
     def _fake_scan(*_args: Any, **_kwargs: Any) -> _FakeCacheInfo:
         return fake_cache
@@ -480,7 +478,7 @@ def test_default_is_cached_returns_false_when_scan_fails(
     multi-GB download. False negatives are tolerable; false positives
     are not.
     """
-    import huggingface_hub  # type: ignore[import-untyped]
+    import huggingface_hub
 
     def _raising_scan(*_args: Any, **_kwargs: Any) -> Any:
         raise OSError("synthetic scan failure")

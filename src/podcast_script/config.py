@@ -162,21 +162,36 @@ def merge(
     return cfg
 
 
+def validate_lang(code: str) -> None:
+    """Validate ``code`` against the curated v1 ``--lang`` set.
+
+    Raises :class:`UsageError` (exit 2) if ``code`` is not in
+    :data:`SUPPORTED_LANGS`. The error message lists all supported codes
+    and, when the typo is within Levenshtein distance 2 of a supported
+    code, appends a ``did you mean `<closest>`?`` suggestion. Used both
+    by the CLI's standalone ``--lang`` validator (AC-US-1.5) and by
+    :func:`validate` for the config-loaded path (AC-US-4.4) — keeping
+    the message shape identical across both.
+    """
+    if code in SUPPORTED_LANGS:
+        return
+    supported = ", ".join(SUPPORTED_LANGS)
+    suggestion = _closest_supported_lang(code)
+    base = f"unknown --lang {code!r}; supported: {supported}"
+    if suggestion is not None:
+        raise UsageError(f"{base}; did you mean `{suggestion}`?")
+    raise UsageError(base)
+
+
 def validate(cfg: Config) -> None:
     """Validate every whitelisted field on ``cfg``; raise on any miss.
 
-    ``lang`` uses the same did-you-mean machinery as :mod:`.cli` so a
-    config-loaded typo (AC-US-4.4) gets the same hint as a CLI typo
+    ``lang`` delegates to :func:`validate_lang` so a config-loaded typo
+    (AC-US-4.4) gets the same did-you-mean hint as a CLI typo
     (AC-US-1.5). The other three whitelists raise plain messages —
     they're rare enough that did-you-mean noise isn't worth the LoC.
     """
-    if cfg.lang not in SUPPORTED_LANGS:
-        supported = ", ".join(SUPPORTED_LANGS)
-        suggestion = _closest_supported_lang(cfg.lang)
-        base = f"unknown lang {cfg.lang!r}; supported: {supported}"
-        if suggestion is not None:
-            raise UsageError(f"{base}; did you mean `{suggestion}`?")
-        raise UsageError(base)
+    validate_lang(cfg.lang)
 
     if cfg.model not in SUPPORTED_MODELS:
         raise UsageError(f"unknown model {cfg.model!r}; supported: {', '.join(SUPPORTED_MODELS)}")
@@ -254,4 +269,5 @@ __all__ = [
     "load_toml_defaults",
     "merge",
     "validate",
+    "validate_lang",
 ]

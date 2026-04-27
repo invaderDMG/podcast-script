@@ -19,9 +19,7 @@ from podcast_script.errors import UsageError
 
 
 @pytest.fixture(autouse=True)
-def _isolated_default_config_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def _isolated_default_config_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Pin :data:`config.DEFAULT_CONFIG_PATH` to a non-existent path.
 
     Without this fixture every CLI test would pick up whatever
@@ -31,9 +29,7 @@ def _isolated_default_config_path(
     (the "no config + no --lang" path). Tests that *want* a config can
     override this fixture by monkeypatching the same attribute again.
     """
-    monkeypatch.setattr(
-        config_module, "DEFAULT_CONFIG_PATH", tmp_path / "no-such-config.toml"
-    )
+    monkeypatch.setattr(config_module, "DEFAULT_CONFIG_PATH", tmp_path / "no-such-config.toml")
 
 
 @pytest.fixture
@@ -612,14 +608,10 @@ class TestCliConfigMerge:
         monkeypatch.setattr(config_module, "DEFAULT_CONFIG_PATH", config_path)
 
         seen: dict[str, object] = {}
-        monkeypatch.setattr(
-            cli_module, "_run_pipeline", lambda **kw: seen.update(kw)
-        )
+        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **kw: seen.update(kw))
 
         input_file = _touch(tmp_path, "episode.mp3")
-        result = runner.invoke(
-            app, [str(input_file), "--lang", "en", "--model", "tiny"]
-        )
+        result = runner.invoke(app, [str(input_file), "--lang", "en", "--model", "tiny"])
 
         assert result.exit_code == 0, f"stderr={result.stderr!r}"
         assert seen.get("lang") == "en"

@@ -124,6 +124,60 @@ def test_markers_are_english_regardless_of_speech_language_AC_US_2_2() -> None:
             assert portuguese_marker not in out
 
 
+def test_mm_ss_format_for_short_inputs_AC_US_2_4() -> None:
+    """AC-US-2.4 (< 1 h branch): every timestamp uses ``MM:SS`` and
+    no ``HH:`` prefix appears anywhere in the file. The Pipeline picks
+    ``MM:SS`` for inputs shorter than one hour.
+    """
+    # ~50-minute episode: well under the 1 h cutoff.
+    segments = [
+        Segment(0.0, 14.0, "music"),
+        Segment(14.0, 750.0, "speech"),
+        Segment(750.0, 765.0, "music"),
+    ]
+    transcripts = [
+        TranscribedSegment(start=14.0, end=750.0, text="opening"),
+    ]
+
+    out = render(segments, transcripts, "MM:SS")
+
+    # MM:SS form present.
+    assert "00:14" in out
+    assert "12:30" in out  # 750 s
+    assert "12:45" in out  # 765 s
+    # No HH:MM:SS form anywhere — never mixes (per SRS §1.6 last paragraph).
+    assert not re.search(r"\b\d{2}:\d{2}:\d{2}\b", out)
+
+
+def test_hh_mm_ss_format_for_long_inputs_AC_US_2_4() -> None:
+    """AC-US-2.4 (≥ 1 h branch): every timestamp uses ``HH:MM:SS`` and
+    no two-digit-only ``MM:SS`` form appears.
+    """
+    # 1 h 42 min episode: above the 1 h cutoff.
+    segments = [
+        Segment(0.0, 14.0, "music"),
+        Segment(14.0, 6150.0, "speech"),
+        Segment(6150.0, 6162.0, "music"),
+    ]
+    transcripts = [
+        TranscribedSegment(start=14.0, end=6150.0, text="opening"),
+        TranscribedSegment(start=6162.0, end=6180.0, text="closing"),
+    ]
+
+    out = render(segments, transcripts, "HH:MM:SS")
+
+    # HH:MM:SS form present.
+    assert "00:00:14" in out
+    assert "01:42:30" in out  # 6150 s
+    assert "01:42:42" in out  # 6162 s
+    # No bare MM:SS lines — every backticked or bracketed timestamp
+    # must include the HH: prefix.
+    bare_mm_ss = re.findall(r"`(\d{2}:\d{2})`", out)
+    assert bare_mm_ss == [], f"unexpected bare MM:SS timestamps: {bare_mm_ss}"
+    bracketed_mm_ss = re.findall(r"\[(\d{2}:\d{2}) —", out)
+    assert bracketed_mm_ss == [], f"unexpected bracketed MM:SS timestamps: {bracketed_mm_ss}"
+
+
 def test_multiple_music_regions_each_get_a_pair_AC_US_2_1() -> None:
     """AC-US-2.1: multiple music regions each produce their own
     start/end pair; the count matches the number of music segments.

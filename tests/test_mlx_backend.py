@@ -246,6 +246,73 @@ def test_transcribe_before_load_raises_model_error() -> None:
 
 
 # ---------------------------------------------------------------------------
+# AC-US-5.4 — network unreachable on first run → ModelError exit 5
+# ---------------------------------------------------------------------------
+
+
+def test_load_wraps_network_failure_in_model_error_AC_US_5_4() -> None:
+    """AC-US-5.4 (US-5, Must): when the network is unreachable on first
+    run and the model is not in the ``huggingface_hub`` cache, the tool
+    MUST exit with code 5 and a stderr message naming the model and the
+    failure mode. ``cli.py`` translates :class:`ModelError` (exit 5)
+    automatically; this test validates the wrap and the message shape
+    on the mlx-whisper branch (mirror of the faster-whisper assertion).
+
+    ``mlx_whisper.load_models.load_model`` ultimately calls
+    ``huggingface_hub`` for download + cache resolution and surfaces a
+    wide vocabulary of network-shaped exceptions (``httpx.ConnectError``,
+    ``hf_hub.errors.HfHubHTTPError``, raw ``OSError``, etc.). Any
+    non-``ImportError`` failure inside ``_build_model`` is wrapped —
+    robust to upstream API drift (R-17).
+    """
+    backend = _make_backend_with_build_error(
+        ConnectionError("Failed to resolve 'huggingface.co'"),
+    )
+
+    with pytest.raises(ModelError) as exc_info:
+        backend.load(model="large-v3", device="cpu")
+
+    msg = str(exc_info.value)
+    assert "large-v3" in msg, "ModelError message must name the model (AC-US-5.4)"
+    assert "Failed to resolve" in msg or "ConnectionError" in msg, (
+        "ModelError message must surface the upstream failure mode (AC-US-5.4)"
+    )
+    assert isinstance(exc_info.value.__cause__, ConnectionError), (
+        "Original exception MUST chain via __cause__ for debuggability"
+    )
+
+
+def test_load_wraps_oserror_disk_failure_in_model_error() -> None:
+    """Disk-shaped failures during model resolution (``huggingface_hub``
+    cache write, full disk, permission denied) MUST also surface as
+    :class:`ModelError` (exit 5). Same family of failures as AC-US-5.4
+    but on the local filesystem axis rather than the network.
+    """
+    backend = _make_backend_with_build_error(
+        OSError(28, "No space left on device"),
+    )
+
+    with pytest.raises(ModelError) as exc_info:
+        backend.load(model="tiny", device="cpu")
+
+    assert isinstance(exc_info.value.__cause__, OSError)
+    assert "tiny" in str(exc_info.value)
+
+
+def test_load_propagates_keyboard_interrupt_per_ADR_0014() -> None:
+    """ADR-0014: ``KeyboardInterrupt`` and ``SystemExit`` MUST propagate
+    untouched even when the broad ``Exception`` wrap is in place — Ctrl-C
+    is the user's contract; AC-US-5.3 resume / restart is on the user,
+    not us. Wrapping these would mis-translate them to exit 5 instead of
+    the standard 130 / requested code.
+    """
+    backend = _make_backend_with_build_error(KeyboardInterrupt())
+
+    with pytest.raises(KeyboardInterrupt):
+        backend.load(model="tiny", device="cpu")
+
+
+# ---------------------------------------------------------------------------
 # AC-US-5.1 / AC-US-5.2 — first-run model-download notice integration
 # ---------------------------------------------------------------------------
 

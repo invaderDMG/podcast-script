@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 
 from ..errors import ModelError
+from .base import emit_first_run_notice_if_missing
 
 _log = logging.getLogger(__name__)
 
@@ -61,6 +62,11 @@ class MlxWhisperBackend:
         """
         if self._model is not None:
             return
+        emit_first_run_notice_if_missing(
+            model,
+            is_cached=self._is_cached,
+            logger=_log,
+        )
         try:
             self._model = self._build_model(model, device)
         except ImportError as e:
@@ -70,6 +76,37 @@ class MlxWhisperBackend:
                 f"an Apple Silicon machine. Cannot load model '{model}'."
             ) from e
         self._model_name = model
+
+    def _is_cached(self, model: str) -> bool:
+        """Return ``True`` if an mlx-whisper cache entry for ``model`` exists.
+
+        Real path: lazy-imports ``huggingface_hub`` and scans the local
+        cache for any repo whose id ends with ``/whisper-{model}``. The
+        leading slash is load-bearing — it disambiguates ``mlx-community``
+        repos (``mlx-community/whisper-tiny``) from the faster-whisper
+        siblings (``Systran/faster-whisper-tiny``) that share the same
+        ``~/.cache/huggingface`` directory. Without the slash anchor,
+        a faster cache entry would falsely report the mlx model as
+        cached and silently suppress the AC-US-5.1 notice.
+
+        Override-point for unit tests — POD-030 (Tier 2, SP-6) covers
+        the live HF surface on macOS CI.
+
+        On any failure (HF lib missing, scan errors, permission denied)
+        returns ``False`` so the AC-US-5.1 notice fires conservatively
+        rather than silently letting a multi-GB download surprise the
+        user.
+        """
+        try:
+            from huggingface_hub import scan_cache_dir
+        except ImportError:
+            return False
+        try:
+            info = scan_cache_dir()
+        except Exception:
+            return False
+        target = f"/whisper-{model}"
+        return any(repo.repo_id.endswith(target) for repo in info.repos)
 
     def _build_model(self, model: str, device: str) -> object:
         """Construct (download + load) the underlying ``mlx_whisper`` model.

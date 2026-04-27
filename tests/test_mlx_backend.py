@@ -253,9 +253,7 @@ def test_load_skips_cache_check_on_repeat_call() -> None:
     backend.load(model="large-v3", device="cpu")
     backend.load(model="large-v3", device="cpu")
 
-    assert cache_calls == ["large-v3"], (
-        "second load() must short-circuit before _is_cached re-runs"
-    )
+    assert cache_calls == ["large-v3"], "second load() must short-circuit before _is_cached re-runs"
     notices = [r for r in records if getattr(r, "event", None) == "model_download"]
     assert len(notices) == 1
 

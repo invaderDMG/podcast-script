@@ -90,6 +90,40 @@ def test_music_marker_exact_shape_AC_US_2_1() -> None:
     assert out.count("music ends") == 1
 
 
+def test_markers_are_english_regardless_of_speech_language_AC_US_2_2() -> None:
+    """AC-US-2.2: the music marker text is always English (``music starts`` /
+    ``music ends``) no matter what language the speech is in.
+
+    The renderer signature has no ``lang`` parameter by design — the only
+    way for the marker text to vary by language would be reading from
+    transcript content, which the renderer must not do. We exercise this
+    structurally by feeding non-English transcript text and asserting the
+    English marker shape is unchanged.
+    """
+    segments = [
+        Segment(0.0, 5.0, "music"),
+        Segment(5.0, 30.0, "speech"),
+    ]
+    spanish_transcripts = [
+        TranscribedSegment(start=5.0, end=30.0, text="Bienvenidos al podcast"),
+    ]
+    portuguese_transcripts = [
+        TranscribedSegment(start=5.0, end=30.0, text="Bem-vindos ao podcast"),
+    ]
+
+    out_es = render(segments, spanish_transcripts, "MM:SS")
+    out_pt = render(segments, portuguese_transcripts, "MM:SS")
+
+    for out in (out_es, out_pt):
+        assert "music starts" in out
+        assert "music ends" in out
+        # No localized variants must leak in.
+        for spanish_marker in ("música empieza", "música termina", "comienza", "termina la música"):
+            assert spanish_marker not in out
+        for portuguese_marker in ("música começa", "música acaba", "início da música"):
+            assert portuguese_marker not in out
+
+
 def test_multiple_music_regions_each_get_a_pair_AC_US_2_1() -> None:
     """AC-US-2.1: multiple music regions each produce their own
     start/end pair; the count matches the number of music segments.

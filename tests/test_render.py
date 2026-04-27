@@ -10,8 +10,27 @@ from __future__ import annotations
 import re
 
 from podcast_script.backends.base import TranscribedSegment
-from podcast_script.render import render
+from podcast_script.render import TimestampFormat, render
 from podcast_script.segment import Segment
+
+
+def _leading_timestamps(out: str, fmt: TimestampFormat) -> list[int]:
+    """Extract the leading timestamp (in seconds) from each emitted line.
+
+    Returns one int per non-blank line carrying a timestamp. Used by the
+    NFR-3 ordering assertion below.
+    """
+    pattern = r"^(?:> \[|`)(\d{2}:\d{2}(?::\d{2})?)" if fmt == "HH:MM:SS" else r"^(?:> \[|`)(\d{2}:\d{2})"
+    out_seconds: list[int] = []
+    for line in out.splitlines():
+        m = re.match(pattern, line)
+        if m is None:
+            continue
+        parts = [int(p) for p in m.group(1).split(":")]
+        # Either [HH, MM, SS] or [MM, SS].
+        secs = parts[0] * 3600 + parts[1] * 60 + parts[2] if len(parts) == 3 else parts[0] * 60 + parts[1]
+        out_seconds.append(secs)
+    return out_seconds
 
 
 def test_drops_noise_and_silence_segments_AC_US_2_5() -> None:
@@ -122,6 +141,60 @@ def test_markers_are_english_regardless_of_speech_language_AC_US_2_2() -> None:
             assert spanish_marker not in out
         for portuguese_marker in ("música começa", "música acaba", "início da música"):
             assert portuguese_marker not in out
+
+
+def test_emitted_lines_are_in_non_decreasing_time_order_AC_US_2_3() -> None:
+    """AC-US-2.3 / NFR-3: every emitted line's leading timestamp is
+    non-decreasing.
+
+    With music regions interspersed between speech regions, the output
+    must interleave music markers and speech lines so timestamps never
+    go backward. Lines of the form ``> [<ts> — music ...]`` and
+    ``\\`<ts>\\`  ...`` both count toward the invariant.
+    """
+    segments = [
+        Segment(0.0, 14.0, "music"),
+        Segment(14.0, 60.0, "speech"),
+        Segment(60.0, 120.0, "music"),
+        Segment(120.0, 200.0, "speech"),
+    ]
+    transcripts = [
+        TranscribedSegment(start=14.0, end=60.0, text="opening words"),
+        TranscribedSegment(start=120.0, end=200.0, text="more words"),
+    ]
+
+    out = render(segments, transcripts, "MM:SS")
+    timestamps = _leading_timestamps(out, "MM:SS")
+
+    assert timestamps == sorted(timestamps), (
+        f"timestamps not non-decreasing: {timestamps}"
+    )
+    # Sanity: we got the four expected leading values somewhere in the run.
+    assert 0 in timestamps and 14 in timestamps and 60 in timestamps and 120 in timestamps
+
+
+def test_speech_inside_music_window_still_orders_correctly_AC_US_2_3() -> None:
+    """AC-US-2.3 edge: when a speech transcript starts before a music
+    region's ``ends`` marker (e.g. EC-1 music-bed-under-speech), the
+    output ordering still holds — speech text at t=20 lands before
+    music-ends at t=30.
+    """
+    segments = [
+        Segment(0.0, 30.0, "music"),
+        Segment(30.0, 60.0, "speech"),
+    ]
+    # A pathological case: speech transcript whose start lies inside the
+    # music region. (Per EC-1 the segmenter could produce overlapping
+    # interpretations after pipeline re-anchoring.)
+    transcripts = [
+        TranscribedSegment(start=20.0, end=30.0, text="under the bed"),
+        TranscribedSegment(start=30.0, end=60.0, text="and now clear"),
+    ]
+
+    out = render(segments, transcripts, "MM:SS")
+    timestamps = _leading_timestamps(out, "MM:SS")
+
+    assert timestamps == sorted(timestamps)
 
 
 def test_mm_ss_format_for_short_inputs_AC_US_2_4() -> None:

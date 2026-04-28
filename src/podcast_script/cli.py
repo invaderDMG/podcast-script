@@ -40,6 +40,7 @@ from .errors import InputIOError, OutputExistsError, PodcastScriptError
 from .logging_setup import configure
 
 if TYPE_CHECKING:
+    from .backends.base import WhisperBackend
     from .logging_setup import Verbosity
 
 # Re-exported so existing imports (``from podcast_script.cli import
@@ -119,13 +120,26 @@ def _resolve_verbosity(verbose: bool, quiet: bool, debug: bool) -> Verbosity:
     return "normal"
 
 
+def _platform_tag() -> str:
+    """Concise platform identifier for the ``event=backend_selected`` line.
+
+    Format: ``<sys.platform>-<machine>`` (``darwin-arm64``, ``linux-x86_64``,
+    …). Lets shell wrappers grep one consistent token instead of trying
+    to reconstruct the platform from environment.
+    """
+    import platform as _platform
+    import sys as _sys
+
+    return f"{_sys.platform}-{_platform.machine()}"
+
+
 def _run_pipeline(
     *,
     input_path: Path,
     output_path: Path,
     lang: str,
     model: str,
-    backend: str,
+    backend_instance: WhisperBackend,
     device: str,
     force: bool,
     debug: bool,
@@ -134,16 +148,17 @@ def _run_pipeline(
 
     The cli is the composition root (ADR-0002 §Decision step 4) — it
     instantiates the concrete stages and hands them to :class:`Pipeline`.
-    POD-017 plugs the real :class:`WhisperBackend` (faster-whisper or
-    mlx-whisper) in via :func:`~podcast_script.backends.base.select_backend`,
-    replacing the stub used during SP-1/SP-2. ``--force`` / ``--debug``
-    wiring is plumbed but their pipeline-level effects (atomic-rename
-    invariant; debug-artifact dir) live in POD-009 / POD-024 — the cli
-    just hands them through.
+    The ``backend_instance`` is resolved by ``main()`` via
+    :func:`~podcast_script.backends.base.select_backend` so the
+    ``event=backend_selected`` lifecycle event (ADR-0012) can fire
+    *before* this function is called — that way the line surfaces even
+    when tests stub ``_run_pipeline`` to a no-op. ``--force`` /
+    ``--debug`` wiring is plumbed but their pipeline-level effects
+    (atomic-rename invariant; debug-artifact dir) live in POD-009 /
+    POD-024 — the cli just hands them through.
     """
     del force, debug
 
-    from .backends.base import select_backend
     from .decode import decode as decode_audio
     from .pipeline import Pipeline
     from .render import render
@@ -152,7 +167,7 @@ def _run_pipeline(
     pipeline = Pipeline(
         decode=decode_audio,
         segmenter=InaSpeechSegmenter(),
-        backend=select_backend(backend=backend, device=device),
+        backend=backend_instance,
         render=render,
         model=model,
         device=device,
@@ -253,8 +268,27 @@ def main(
 
         # ADR-0012 lifecycle — ``event=config_loaded`` fires after the
         # CLI + TOML merge resolves to a validated Config. Order matters:
-        # ``startup`` → ``config_loaded`` → (pipeline events) → ``done``.
+        # ``startup`` → ``config_loaded`` → ``backend_selected`` →
+        # (pipeline events) → ``done``.
         log.info("", extra={"event": "config_loaded"})
+
+        # ADR-0012 lifecycle — ``event=backend_selected`` fires *before*
+        # any heavy lib touches; the platform-detection rule (ADR-0003,
+        # UC-1 E7) lives in ``select_backend``. Resolving the backend
+        # here (not inside ``_run_pipeline``) lets the event surface
+        # under any test that stubs ``_run_pipeline``.
+        from .backends.base import select_backend
+
+        backend_instance = select_backend(backend=cfg.backend, device=cfg.device)
+        log.info(
+            "",
+            extra={
+                "event": "backend_selected",
+                "backend": backend_instance.name,
+                "device": cfg.device,
+                "platform": _platform_tag(),
+            },
+        )
 
         resolved_output = cfg.output if cfg.output is not None else cfg.input.with_suffix(".md")
         _check_output_path(resolved_output, force=cfg.force)
@@ -263,7 +297,7 @@ def main(
             output_path=resolved_output,
             lang=cfg.lang,
             model=cfg.model,
-            backend=cfg.backend,
+            backend_instance=backend_instance,
             device=cfg.device,
             force=cfg.force,
             debug=debug,

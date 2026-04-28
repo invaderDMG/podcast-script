@@ -105,8 +105,23 @@ def configure(verbosity: Verbosity, progress: Progress | None) -> logging.Logger
 
     Returns the configured logger so callers can pass it on; the function is
     idempotent — re-calling it replaces handlers rather than stacking them.
+
+    NFR-10 — logfmt is *one entry per line*. The Console is created with
+    ``soft_wrap=True`` so long lines (e.g. ``event=done`` carrying seven
+    keys per UC-1 step 10) don't get hard-wrapped at terminal width and
+    split across multiple lines, which would break shell wrappers that
+    grep one logfmt entry per stderr line.
     """
-    console = progress.console if progress is not None else Console(stderr=True)
+    # ``width=10**6`` disables Rich's hard-wrap at terminal width — a
+    # single logfmt line with seven keys (``event=done`` per UC-1 step
+    # 10) easily exceeds 80 cols and would otherwise be split across
+    # two stderr lines, breaking the "one logfmt entry per line"
+    # contract that shell wrappers depend on.
+    console = (
+        progress.console
+        if progress is not None
+        else Console(stderr=True, soft_wrap=True, width=10**6)
+    )
     handler = RichHandler(
         console=console,
         show_time=False,

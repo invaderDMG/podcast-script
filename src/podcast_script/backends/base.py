@@ -21,6 +21,7 @@ emit-once logic here keeps faster + mlx mirrors free of duplication.
 from __future__ import annotations
 
 import logging
+import os
 import platform
 import sys
 from collections.abc import Callable, Iterable
@@ -30,6 +31,18 @@ import numpy as np
 import numpy.typing as npt
 
 from ..errors import UsageError
+
+# NFR-10 compatibility — silence ``huggingface_hub`` WARNING-level logs.
+# On a cold cache (first ever run, fresh CI runner, post-cache-clear)
+# the lib's HTTP layer emits ``Warning: You are sending unauthenticated
+# requests to the HF Hub. Please set a HF_TOKEN ...`` directly on
+# stderr via Python's :mod:`logging`, breaking the logfmt-only promise.
+# We don't authenticate (the project is public-domain audio + open
+# Whisper weights, no token model exists in our scope), and the warning
+# is purely informational. ``HF_HUB_VERBOSITY=error`` is the documented
+# control for the lib's log level. ``setdefault`` lets a developer who
+# *does* want HF debug output override us by exporting the variable.
+os.environ.setdefault("HF_HUB_VERBOSITY", "error")
 
 
 class TranscribedSegment(NamedTuple):

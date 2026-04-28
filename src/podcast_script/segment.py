@@ -18,6 +18,7 @@ from __future__ import annotations
 import contextlib
 import os
 import tempfile
+import warnings
 import wave
 from dataclasses import dataclass
 from pathlib import Path
@@ -227,7 +228,19 @@ class InaSpeechSegmenter:
         os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
         _patch_pyannote_viterbi_for_modern_numpy()
 
-        from inaSpeechSegmenter import Segmenter as _InaSeg  # type: ignore[import-untyped]
+        # Silence the SciPy DeprecationWarning fired at import time —
+        # ``inaSpeechSegmenter/sidekit_mfcc.py`` imports ``dct`` from a
+        # path that's slated for removal in SciPy 2.0. Upstream issue;
+        # disappears the day the segmenter bumps. Captured here (not at
+        # module load) so a real DeprecationWarning from our own code
+        # would still surface in tests via the pytest ``error`` filter.
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                category=DeprecationWarning,
+                module=r"inaSpeechSegmenter\..*",
+            )
+            from inaSpeechSegmenter import Segmenter as _InaSeg  # type: ignore[import-untyped]
 
         return _InaSeg(vad_engine="smn", detect_gender=False)
 
@@ -244,9 +257,31 @@ class InaSpeechSegmenter:
         v0.7.6) and invokes the engine on its path. The temp WAV is
         deleted on context exit so a long-running process never
         accumulates fixture-sized scratch files.
+
+        Production audio routinely contains silent intros / outros and
+        ad breaks. inaSpeechSegmenter z-score-normalises feature
+        windows by ``(x - mean) / std``; on a near-zero-variance frame
+        ``std`` is ~0 and the resulting NaN propagates, firing two
+        ``RuntimeWarning("invalid value encountered in subtract")``
+        warnings (one in ``segmenter.py:62``, one inside
+        ``numpy/_methods.py``). The downstream code handles the NaN
+        fine — segmentation labels still come out correctly — so the
+        warnings are pure user-visible noise that breaks NFR-10's
+        clean-stderr promise. We suppress them at this single boundary
+        rather than at module load so we don't accidentally hide a
+        warning from our own code.
         """
         real_engine = cast("_InaEngine", engine)
-        with self._pcm_to_temp_wav(pcm) as wav_path:
+        with (
+            self._pcm_to_temp_wav(pcm) as wav_path,
+            np.errstate(invalid="ignore", divide="ignore"),
+            warnings.catch_warnings(),
+        ):
+            warnings.filterwarnings(
+                "ignore",
+                category=RuntimeWarning,
+                message="invalid value encountered in subtract",
+            )
             result = real_engine(str(wav_path))
         return [(label, float(start), float(end)) for label, start, end in result]
 

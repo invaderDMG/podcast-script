@@ -9,28 +9,38 @@ that produced our fixture are still in the repo.
 
 ## Speech track
 
-- **Title:** _to be filled in by Phase 2_
-- **Reader:** _to be filled in_
-- **Source URL:** _to be filled in_
-- **License:** Public Domain (LibriVox catalog policy)
-- **Retrieved:** _YYYY-MM-DD_
-- **Local copy:** `examples/sources/speech.<ext>` (checksum in
-  `examples/sources/CHECKSUMS.txt`)
-- **Segment used:** the first ~60 s of the linked recording, trimmed
-  inside `build_sample.sh` (no external editing).
+- **Title:** _Las Fábulas de Esopo, vol. 01_ — fable 002, "El águila y
+  el escarabajo" ("The Eagle and the Beetle")
+- **Author:** Aesop, Spanish translation by Jorge R. Rodríguez (after
+  Townsend)
+- **Reader:** LibriVox volunteer narrator (single solo voice on this
+  track)
+- **Source page:** https://archive.org/details/fabulas_esopo_01_librivox
+  (catalog mirror: https://librivox.org/las-fabulas-de-esopo-vol-01/)
+- **License:** Public Domain — LibriVox standard. The archive.org page
+  states "Usage: Public Domain" and links to CC0 1.0 Universal:
+  https://creativecommons.org/publicdomain/zero/1.0/
+- **Retrieved:** 2026-04-28 (UTC)
+- **Local copy:** `examples/sources/speech.mp3` — checksum recorded in
+  `examples/sources/CHECKSUMS.txt`
+- **Segment used:** the first 60 s of the linked recording (the full
+  track is ~2:31), trimmed inside `build_sample.sh` (no external
+  editing).
 
 ## Music bed
 
-- **Title:** _to be filled in_
-- **Author:** _to be filled in_
-- **Source URL:** _to be filled in_
-- **License:** _CC0 1.0 / Public Domain — to be filled in with the exact
-  license URL at-time-of-bundle_
-- **Retrieved:** _YYYY-MM-DD_
-- **Local copy:** `examples/sources/music.<ext>` (checksum in
-  `examples/sources/CHECKSUMS.txt`)
-- **Segment used:** the first ~10 s of the linked recording, mixed at
-  -12 dB at 25–35 s of the speech track.
+- **Title:** _Prelude Op. 28 No. 5_, by Frédéric Chopin
+- **Performer:** Solo piano, from the Musopen Complete Chopin Collection
+  curated by Aaron Dunn (Musopen)
+- **Source page:** https://archive.org/details/musopen-chopin
+- **License:** CC0 1.0 Universal — explicitly stated on the
+  archive.org page. License URL:
+  https://creativecommons.org/publicdomain/zero/1.0/
+- **Retrieved:** 2026-04-28 (UTC)
+- **Local copy:** `examples/sources/music.mp3` — checksum recorded in
+  `examples/sources/CHECKSUMS.txt`
+- **Segment used:** the first 10 s of the linked recording, mixed at
+  -12 dB at 25-35 s of the speech track.
 
 ## Build recipe
 

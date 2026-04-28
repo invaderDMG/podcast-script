@@ -39,8 +39,10 @@ that produced our fixture are still in the repo.
 - **Retrieved:** 2026-04-28 (UTC)
 - **Local copy:** `examples/sources/music.mp3` — checksum recorded in
   `examples/sources/CHECKSUMS.txt`
-- **Segment used:** the first 10 s of the linked recording, mixed at
-  -12 dB at 25-35 s of the speech track.
+- **Segment used:** the first 10 s of the linked recording, used as a
+  bookended music bed at 25-35 s — speech occupies 0-25 s and 35-60 s
+  with the music alone in between (mixing the bed *under* speech
+  caused the segmenter to label the music as `speech` per SRS Risk #3).
 
 ## Build recipe
 

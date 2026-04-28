@@ -119,6 +119,15 @@ def test_cli_tiny_pipeline_produces_structural_markdown(
     assert result.exit_code == 0, f"CLI exited {result.exit_code}; stderr={result.stderr!r}"
     assert output_path.exists(), "expected output Markdown file at -o path"
 
+    # UC-1 step 10 + NFR-10: every successful run emits a terminal
+    # logfmt summary on stderr so shell wrappers can assert success on
+    # a single grep'able key. The pipeline currently logs
+    # ``event=write_done`` as the last entry; POD-015 (SP-5) renames
+    # that to ``event=done`` per ADR-0012's locked catalogue.
+    assert "event=write_done" in result.stderr, (
+        f"missing terminal write_done event; stderr={result.stderr!r}"
+    )
+
     body = output_path.read_text(encoding="utf-8")
     _assert_structural_invariants(body)
 
@@ -181,10 +190,14 @@ _MUSIC_END_RE = re.compile(r"\[\d{2}:\d{2} — music ends\]")
 _TIMESTAMP_MMSS_RE = re.compile(r"\b\d{2}:\d{2}\b")
 
 
+_HHMMSS_RE = re.compile(r"\b\d{2}:\d{2}:\d{2}\b")
+_NOISE_MARKER_RE = re.compile(r">\s*\[\d{2}:\d{2}.*?(noise|silence)", re.IGNORECASE)
+
+
 def _assert_structural_invariants(body: str) -> None:
     """Lock the locked surface of SRS §1.6 / AC-US-2.x without pinning text.
 
-    Three invariants are the *contract* (anything else - line counts,
+    Five invariants are the *contract* (anything else - line counts,
     exact transcript words, paragraph breaks - varies with the model
     and is intentionally not asserted):
     """
@@ -198,7 +211,22 @@ def _assert_structural_invariants(body: str) -> None:
     # 3) Timestamp format auto-MM:SS for < 1 h fixture (AC-US-2.4).
     timestamps = _TIMESTAMP_MMSS_RE.findall(body)
     assert timestamps, "expected at least one MM:SS timestamp"
-    assert "::" not in body, "no HH:MM:SS expected for a 60 s fixture"
+    # AC-US-2.4 < 1 h branch: no HH:MM:SS triple-segment timestamps.
+    # The earlier ``"::" not in body`` was a no-op since real HH:MM:SS
+    # uses single colons (``01:23:45``); the regex is the real check.
+    assert not _HHMMSS_RE.search(body), (
+        f"no HH:MM:SS expected for a 60 s fixture (AC-US-2.4 < 1 h branch); body={body!r}"
+    )
+
+    # 4) AC-US-2.5 — no annotation lines for noise/silence regions. The
+    #    fixture intentionally has silence padding around the music bed,
+    #    so a renderer regression that started leaking
+    #    ``> [MM:SS — noise]`` / ``> [MM:SS — silence]`` markers must
+    #    fail this. Anchored to the marker shape so a transcribed word
+    #    that happens to contain "noise" or "silence" doesn't trip it.
+    assert not _NOISE_MARKER_RE.search(body), (
+        f"unexpected noise/silence marker in transcript; body={body!r}"
+    )
 
 
 def _assert_same_structure(actual: str, reference: str) -> None:

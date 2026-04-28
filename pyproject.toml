@@ -9,8 +9,15 @@ dependencies = [
     "huggingface_hub>=0.24",
     "inaspeechsegmenter==0.7.6",
     "mlx-whisper>=0.4 ; sys_platform == 'darwin' and platform_machine == 'arm64'",
-    "numpy>=2.0",
+    # Pinned <2 for inaSpeechSegmenter 0.7.6 compatibility — its 0.7.x
+    # branch uses ``np.lib.pad`` (removed in 2.x) and the older positional
+    # forms of ``np.stack``/``np.concatenate`` that numpy 2.x rejects.
+    # 0.8.0 fixes the numpy compat but adds ``tensorflow[and-cuda]`` which
+    # breaks Apple Silicon; revisit when an Apple-Silicon-clean release
+    # lands.
+    "numpy>=1.26,<2.0",
     "rich>=13.7",
+    "tf-keras>=2.18.0",
     "typer>=0.25.0",
 ]
 
@@ -60,4 +67,11 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = ["-ra", "--strict-markers", "--strict-config"]
+addopts = ["-ra", "--strict-markers", "--strict-config", "-m", "not slow"]
+markers = [
+    # Tier 3 integration tests on the real examples/sample.mp3 fixture
+    # (POD-031). Skipped by default — opt in with `pytest -m slow` or
+    # `pytest -m "slow or not slow"`. CI runs the slow suite on a
+    # separate job so the unit-tier feedback loop stays sub-second.
+    "slow: end-to-end tests that decode + transcribe; require ffmpeg + a Whisper model on disk",
+]

@@ -1,0 +1,8 @@
+# Treat audio fixtures as binary so git diffs / merges don't pretend
+# they're text. SRS §14.1 commits one ~240 KB MP3 (examples/sample.mp3)
+# plus the raw sources used to build it under examples/sources/.
+*.mp3 binary
+*.wav binary
+*.ogg binary
+*.flac binary
+*.m4a binary

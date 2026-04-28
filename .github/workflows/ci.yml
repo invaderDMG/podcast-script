@@ -47,3 +47,10 @@ jobs:
 
       - name: Tests (pytest)
         run: uv run pytest
+
+      - name: Tests (Tier 3 / slow integration)
+        # ADR-0017 mandates Tier 3 on every PR + push, matrix Ubuntu +
+        # macOS. The default suite excludes ``slow`` (sub-second feedback
+        # for the unit tier); this step opts in. First-run downloads the
+        # ``faster-whisper`` ``tiny`` model (~75 MB) on a cold cache.
+        run: uv run pytest -m slow

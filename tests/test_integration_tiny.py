@@ -122,9 +122,7 @@ def test_cli_tiny_pipeline_produces_structural_markdown(
     # UC-1 step 10 + NFR-10 / ADR-0012 — every successful run emits the
     # locked ``event=done`` terminal summary line so shell wrappers can
     # assert success on a single grep'able key.
-    assert "event=done" in result.stderr, (
-        f"missing terminal done event; stderr={result.stderr!r}"
-    )
+    assert "event=done" in result.stderr, f"missing terminal done event; stderr={result.stderr!r}"
 
     # NFR-10 — stderr is logfmt key=value pairs *only*. Stray Python
     # warnings (DeprecationWarning, RuntimeWarning, …) leaking to the

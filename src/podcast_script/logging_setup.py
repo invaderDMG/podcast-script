@@ -100,29 +100,43 @@ def _format_value(value: object) -> str:
     return f'"{escaped}"'
 
 
+class _SoftWrapRichHandler(RichHandler):
+    """RichHandler variant that emits each record without word-wrapping.
+
+    The default :class:`RichHandler` renders log records via
+    ``Console.print(...)``, which word-wraps at the console's width
+    (~80 cols on a TTY, narrower on a pipe). A logfmt line carrying
+    seven keys (UC-1 step 10's ``event=done`` summary) easily exceeds
+    that and gets split across two stderr lines, breaking NFR-10's
+    "one logfmt entry per line" contract that shell wrappers depend
+    on. Overriding :meth:`emit` to pass ``soft_wrap=True`` to
+    ``console.print`` keeps each formatted record on a single line
+    without forcing a console width that would also pad output with
+    spaces (`width=10**6` causes that exact bug).
+    """
+
+    def emit(self, record: logging.LogRecord) -> None:
+        # We bypass RichHandler.emit's renderable-construction so the
+        # plain logfmt string flows straight through. Errors land on
+        # the Handler.handleError path same as the parent class.
+        try:
+            message = self.format(record)
+            self.console.print(message, soft_wrap=True, markup=False, highlight=False)
+        except Exception:
+            # Match logging.Handler.emit semantics — never let a formatting
+            # error crash the calling code; route it to the handler's
+            # configured error stream instead.
+            self.handleError(record)
+
+
 def configure(verbosity: Verbosity, progress: Progress | None) -> logging.Logger:
     """Wire the ``podcast_script`` logger per ADR-0008.
 
     Returns the configured logger so callers can pass it on; the function is
     idempotent — re-calling it replaces handlers rather than stacking them.
-
-    NFR-10 — logfmt is *one entry per line*. The Console is created with
-    ``soft_wrap=True`` so long lines (e.g. ``event=done`` carrying seven
-    keys per UC-1 step 10) don't get hard-wrapped at terminal width and
-    split across multiple lines, which would break shell wrappers that
-    grep one logfmt entry per stderr line.
     """
-    # ``width=10**6`` disables Rich's hard-wrap at terminal width — a
-    # single logfmt line with seven keys (``event=done`` per UC-1 step
-    # 10) easily exceeds 80 cols and would otherwise be split across
-    # two stderr lines, breaking the "one logfmt entry per line"
-    # contract that shell wrappers depend on.
-    console = (
-        progress.console
-        if progress is not None
-        else Console(stderr=True, soft_wrap=True, width=10**6)
-    )
-    handler = RichHandler(
+    console = progress.console if progress is not None else Console(stderr=True)
+    handler = _SoftWrapRichHandler(
         console=console,
         show_time=False,
         show_level=False,

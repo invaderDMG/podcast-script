@@ -68,6 +68,15 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = ["-ra", "--strict-markers", "--strict-config", "-m", "not slow"]
+# Warnings policy — NFR-10 (logfmt key=value on stderr only). Anything
+# that escapes the runtime suppression in `InaSpeechSegmenter` is a real
+# regression: it leaks Python warnings into the user's pipe and breaks
+# the grep contract. Production audio routinely has silent intros /
+# outros, which trigger inaSpeechSegmenter's z-score normalisation on
+# near-zero-variance frames, so the suppression has to be airtight.
+# Whitelisted entries below are upstream issues we cannot fix without
+# bumping the segmenter — tracked under SPK-1 in PROJECT_PLAN §10.1.
+filterwarnings = ["error"]
 markers = [
     # Tier 3 integration tests on the real examples/sample.mp3 fixture
     # (POD-031). Skipped by default — opt in with `pytest -m slow` or

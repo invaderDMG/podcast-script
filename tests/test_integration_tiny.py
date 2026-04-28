@@ -128,6 +128,18 @@ def test_cli_tiny_pipeline_produces_structural_markdown(
         f"missing terminal write_done event; stderr={result.stderr!r}"
     )
 
+    # NFR-10 — stderr is logfmt key=value pairs *only*. Stray Python
+    # warnings (DeprecationWarning, RuntimeWarning, …) leaking to the
+    # user's pipe break that contract. The runtime suppression in
+    # ``InaSpeechSegmenter`` must keep upstream lib noise contained
+    # even on production audio, where silent intros / outros routinely
+    # trigger inaSpeechSegmenter's z-score normalisation on
+    # near-zero-variance frames.
+    for noise in ("Warning:", "DeprecationWarning", "RuntimeWarning"):
+        assert noise not in result.stderr, (
+            f"{noise!r} leaked to stderr; stderr={result.stderr!r}"
+        )
+
     body = output_path.read_text(encoding="utf-8")
     _assert_structural_invariants(body)
 

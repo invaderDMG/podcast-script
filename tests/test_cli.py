@@ -642,3 +642,63 @@ class TestCliConfigMerge:
         # a future refactor that bypasses ``validate_lang`` for the TOML
         # path can't pass this test silently.
         assert "did you mean `ca`" in result.stderr
+
+
+class TestEventCatalogue:
+    """POD-015 — ADR-0012 event catalogue freeze.
+
+    The catalogue is the implicit grep contract for shell scripts wrapping
+    the tool (SRS Risk #9). These tests lock the four lifecycle tokens
+    that depend on cli orchestration; the phase-boundary tokens are
+    covered by ``tests/test_pipeline.py``.
+    """
+
+    def _events_in(self, stderr: str) -> list[str]:
+        """Pull the ``event=<token>`` value from each logfmt line."""
+        out: list[str] = []
+        for line in stderr.splitlines():
+            for chunk in line.split():
+                if chunk.startswith("event="):
+                    out.append(chunk.removeprefix("event="))
+                    break
+        return out
+
+    def test_startup_event_fires_first(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """ADR-0012 lifecycle — ``event=startup`` is the first event
+        emitted (argv parsed, before any work)."""
+        from podcast_script import cli as cli_module
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: None)
+        input_file = _touch(tmp_path, "episode.mp3")
+
+        result = runner.invoke(app, [str(input_file), "--lang", "es"])
+
+        assert result.exit_code == 0, f"stderr={result.stderr!r}"
+        events = self._events_in(result.stderr)
+        assert events, f"no events emitted; stderr={result.stderr!r}"
+        assert events[0] == "startup", f"events={events!r}"
+
+    def test_config_loaded_event_fires_after_merge(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """ADR-0012 lifecycle — ``event=config_loaded`` fires after the
+        cli + TOML merge (AC-US-4.1/4.2 path) succeeds."""
+        from podcast_script import cli as cli_module
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: None)
+        input_file = _touch(tmp_path, "episode.mp3")
+
+        result = runner.invoke(app, [str(input_file), "--lang", "es"])
+
+        events = self._events_in(result.stderr)
+        assert "config_loaded" in events
+        # config_loaded comes after startup, before any pipeline event.
+        assert events.index("config_loaded") > events.index("startup")

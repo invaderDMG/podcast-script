@@ -225,6 +225,12 @@ def main(
     verbosity = _resolve_verbosity(verbose, quiet, debug)
     log = configure(verbosity, progress=None)
 
+    # ADR-0012 lifecycle — ``event=startup`` fires once argv has been
+    # parsed by typer and before any work begins. Lets shell wrappers
+    # see "tool started" before model load (which can take seconds on a
+    # cold cache).
+    log.info("", extra={"event": "startup"})
+
     try:
         # POD-016 — load TOML defaults from the locked path (None = absent)
         # then merge with whatever the user typed on argv. ``cli_overrides``
@@ -244,6 +250,11 @@ def main(
             "verbosity": verbosity,
         }
         cfg = _config.merge(toml_defaults=toml_defaults, cli_overrides=cli_overrides)
+
+        # ADR-0012 lifecycle — ``event=config_loaded`` fires after the
+        # CLI + TOML merge resolves to a validated Config. Order matters:
+        # ``startup`` → ``config_loaded`` → (pipeline events) → ``done``.
+        log.info("", extra={"event": "config_loaded"})
 
         resolved_output = cfg.output if cfg.output is not None else cfg.input.with_suffix(".md")
         _check_output_path(resolved_output, force=cfg.force)

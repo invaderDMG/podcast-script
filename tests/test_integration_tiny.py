@@ -119,13 +119,11 @@ def test_cli_tiny_pipeline_produces_structural_markdown(
     assert result.exit_code == 0, f"CLI exited {result.exit_code}; stderr={result.stderr!r}"
     assert output_path.exists(), "expected output Markdown file at -o path"
 
-    # UC-1 step 10 + NFR-10: every successful run emits a terminal
-    # logfmt summary on stderr so shell wrappers can assert success on
-    # a single grep'able key. The pipeline currently logs
-    # ``event=write_done`` as the last entry; POD-015 (SP-5) renames
-    # that to ``event=done`` per ADR-0012's locked catalogue.
-    assert "event=write_done" in result.stderr, (
-        f"missing terminal write_done event; stderr={result.stderr!r}"
+    # UC-1 step 10 + NFR-10 / ADR-0012 — every successful run emits the
+    # locked ``event=done`` terminal summary line so shell wrappers can
+    # assert success on a single grep'able key.
+    assert "event=done" in result.stderr, (
+        f"missing terminal done event; stderr={result.stderr!r}"
     )
 
     # NFR-10 — stderr is logfmt key=value pairs *only*. Stray Python

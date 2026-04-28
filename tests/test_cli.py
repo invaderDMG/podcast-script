@@ -702,3 +702,119 @@ class TestEventCatalogue:
         assert "config_loaded" in events
         # config_loaded comes after startup, before any pipeline event.
         assert events.index("config_loaded") > events.index("startup")
+
+    def test_backend_selected_carries_required_keys(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """ADR-0012 lifecycle — ``event=backend_selected`` carries keys
+        ``backend=…`` ``device=…`` ``platform=…`` per the catalogue.
+        Stub the actual pipeline run so the test stays Tier 1; the
+        decision-point logging happens in cli, not in pipeline.
+        """
+        from podcast_script import cli as cli_module
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: None)
+        input_file = _touch(tmp_path, "episode.mp3")
+
+        result = runner.invoke(
+            app,
+            [str(input_file), "--lang", "es", "--backend", "faster-whisper"],
+        )
+
+        assert result.exit_code == 0, f"stderr={result.stderr!r}"
+        # The single backend_selected line must contain all three keys.
+        backend_line = next(
+            line for line in result.stderr.splitlines() if "event=backend_selected" in line
+        )
+        assert "backend=faster-whisper" in backend_line, f"line={backend_line!r}"
+        assert "device=" in backend_line, f"line={backend_line!r}"
+        assert "platform=" in backend_line, f"line={backend_line!r}"
+
+    def test_done_summary_carries_locked_shape(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """SRS UC-1 step 10 / ADR-0012 — ``event=done`` is the
+        terminal summary line. Locked shape: ``level=info event=done
+        input=… output=… backend=… model=… lang=… duration_in_s=…
+        duration_wall_s=…``.
+
+        We stub ``_run_pipeline`` to a fake that reports a fixed
+        ``duration_in_s`` so the test runs Tier 1 without touching the
+        real pipeline. The cli must thread that value into the done
+        line + measure ``duration_wall_s`` itself.
+        """
+        from podcast_script import cli as cli_module
+
+        def fake_run(*, return_summary: object = None, **_kwargs: object) -> object:
+            from podcast_script.pipeline import RunSummary
+
+            return RunSummary(duration_in_s=42.5)
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", fake_run)
+        input_file = _touch(tmp_path, "episode.mp3")
+
+        result = runner.invoke(
+            app,
+            [
+                str(input_file),
+                "--lang",
+                "es",
+                "--model",
+                "tiny",
+                "--backend",
+                "faster-whisper",
+            ],
+        )
+
+        assert result.exit_code == 0, f"stderr={result.stderr!r}"
+        events = self._events_in(result.stderr)
+        assert events[-1] == "done", f"events={events!r}"
+
+        done_line = next(line for line in result.stderr.splitlines() if "event=done" in line)
+        # All seven UC-1 step 10 keys must appear in the locked summary.
+        for key in (
+            "input=",
+            "output=",
+            "backend=faster-whisper",
+            "model=tiny",
+            "lang=es",
+            "duration_in_s=42.500",
+            "duration_wall_s=",
+        ):
+            assert key in done_line, f"missing {key!r}; line={done_line!r}"
+
+    def test_full_lifecycle_event_order_at_default_verbosity(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """ADR-0012 catalogue regression net — emits the four lifecycle
+        tokens in canonical order, no others between them. Drift-detector
+        for the next time someone adds a token to the catalogue without
+        updating the ADR.
+        """
+        from podcast_script import cli as cli_module
+
+        def fake_run(**_kwargs: object) -> object:
+            from podcast_script.pipeline import RunSummary
+
+            return RunSummary(duration_in_s=1.0)
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", fake_run)
+        input_file = _touch(tmp_path, "episode.mp3")
+
+        result = runner.invoke(app, [str(input_file), "--lang", "es"])
+
+        assert result.exit_code == 0, f"stderr={result.stderr!r}"
+        # With the pipeline stubbed, only the cli-owned events fire.
+        events = self._events_in(result.stderr)
+        assert events == ["startup", "config_loaded", "backend_selected", "done"], (
+            f"unexpected event order; got {events!r}"
+        )

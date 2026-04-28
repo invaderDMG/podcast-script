@@ -38,6 +38,7 @@ from . import config as _config
 from .config import SUPPORTED_LANGS, validate_lang
 from .errors import InputIOError, OutputExistsError, PodcastScriptError
 from .logging_setup import configure
+from .pipeline import RunSummary
 
 if TYPE_CHECKING:
     from .backends.base import WhisperBackend
@@ -143,8 +144,8 @@ def _run_pipeline(
     device: str,
     force: bool,
     debug: bool,
-) -> None:
-    """Compose the pipeline and run it.
+) -> RunSummary:
+    """Compose the pipeline and run it; return the cli-summary payload.
 
     The cli is the composition root (ADR-0002 §Decision step 4) — it
     instantiates the concrete stages and hands them to :class:`Pipeline`.
@@ -173,7 +174,7 @@ def _run_pipeline(
         device=device,
         lang=lang,
     )
-    pipeline.run(input_path=input_path, output_path=output_path)
+    return pipeline.run(input_path=input_path, output_path=output_path)
 
 
 @app.command(epilog=_EXIT_CODE_EPILOG)
@@ -237,6 +238,8 @@ def main(
     ] = False,
 ) -> None:
     """Transcribe a podcast audio file to Markdown with music-segment markers."""
+    import time as _time
+
     verbosity = _resolve_verbosity(verbose, quiet, debug)
     log = configure(verbosity, progress=None)
 
@@ -245,6 +248,7 @@ def main(
     # see "tool started" before model load (which can take seconds on a
     # cold cache).
     log.info("", extra={"event": "startup"})
+    wall_start = _time.monotonic()
 
     try:
         # POD-016 — load TOML defaults from the locked path (None = absent)
@@ -292,7 +296,7 @@ def main(
 
         resolved_output = cfg.output if cfg.output is not None else cfg.input.with_suffix(".md")
         _check_output_path(resolved_output, force=cfg.force)
-        _run_pipeline(
+        summary = _run_pipeline(
             input_path=cfg.input,
             output_path=resolved_output,
             lang=cfg.lang,
@@ -302,6 +306,27 @@ def main(
             force=cfg.force,
             debug=debug,
         )
+
+        # SRS UC-1 step 10 — locked logfmt summary line.
+        # Shape: ``level=info event=done input=<path> output=<path>
+        # backend=<name> model=<name> lang=<code> duration_in_s=<n>
+        # duration_wall_s=<n>``. Order is preserved by
+        # :class:`~podcast_script.logging_setup.LogfmtFormatter` (insertion
+        # order). Treated as part of the v1.0 grep contract per Risk #9.
+        if summary is not None:
+            log.info(
+                "",
+                extra={
+                    "event": "done",
+                    "input": str(cfg.input),
+                    "output": str(resolved_output),
+                    "backend": backend_instance.name,
+                    "model": cfg.model,
+                    "lang": cfg.lang,
+                    "duration_in_s": f"{summary.duration_in_s:.3f}",
+                    "duration_wall_s": f"{_time.monotonic() - wall_start:.3f}",
+                },
+            )
     except PodcastScriptError as exc:
         log.error("", extra={"event": exc.event, "code": exc.exit_code, "cause": str(exc)})
         raise typer.Exit(exc.exit_code) from exc

@@ -297,3 +297,77 @@ def test_to_jsonl_emits_one_object_per_segment() -> None:
 def test_to_jsonl_empty_list_yields_empty_string() -> None:
     """No segments → empty output (POD-024 may still write the file)."""
     assert to_jsonl([]) == ""
+
+
+# ---------------------------------------------------------------------------
+# InaSpeechSegmenter — production _run_engine against the real lib API
+# ---------------------------------------------------------------------------
+
+
+class _CallableEngine:
+    """Fake engine modeling the real ``inaSpeechSegmenter.Segmenter``
+    surface: the lib uses ``__call__(media_name, ...)`` to take a media
+    file path and return a list of ``(label, start, end)`` triples.
+    Recording the path lets the test verify that the production
+    ``_run_engine`` actually serialised the PCM somewhere readable.
+    """
+
+    def __init__(self, raw: list[tuple[str, float, float]]) -> None:
+        self._raw = raw
+        self.calls: list[str] = []
+
+    def __call__(
+        self,
+        medianame: str,
+        tmpdir: str | None = None,
+        start_sec: float | None = None,
+        stop_sec: float | None = None,
+    ) -> list[tuple[str, float, float]]:
+        del tmpdir, start_sec, stop_sec
+        self.calls.append(medianame)
+        return self._raw
+
+
+class _CallableInaSegmenter(InaSpeechSegmenter):
+    """Subclass that injects a :class:`_CallableEngine` so the production
+    ``_run_engine`` runs end-to-end without touching TensorFlow.
+    """
+
+    def __init__(
+        self,
+        engine: _CallableEngine,
+        *,
+        sample_rate: int = SAMPLE_RATE,
+    ) -> None:
+        super().__init__(sample_rate=sample_rate)
+        self._injected = engine
+
+    def _build_engine(self) -> object:
+        return self._injected
+
+
+def test_run_engine_invokes_engine_with_a_readable_media_path() -> None:
+    """Regression for the post-POD-010 bug where ``_run_engine`` called
+    a ``segment_with_signal`` method that doesn't exist in
+    ``inaSpeechSegmenter`` v0.7.6. The real lib's ``Segmenter`` is a
+    callable that takes a media path; production ``_run_engine`` must
+    therefore serialise the PCM somewhere ffmpeg can re-read it and pass
+    that path through.
+    """
+    pcm = _silence_pcm(2.0)
+    engine = _CallableEngine(raw=[("speech", 0.0, 2.0)])
+    segmenter = _CallableInaSegmenter(engine)
+
+    segments = segmenter.segment(pcm)
+
+    assert engine.calls, "production _run_engine never invoked the engine"
+    media_path = engine.calls[0]
+    # The path must exist (or have existed) when the engine was called.
+    # If the production code uses a tempfile context, we verify the
+    # call happened with a sensibly-shaped path string and that the
+    # downstream segments came through unchanged.
+    assert isinstance(media_path, str)
+    assert media_path.endswith(".wav") or media_path.endswith(".mp3"), (
+        f"expected audio file extension; got {media_path!r}"
+    )
+    assert segments == [Segment(0.0, 2.0, "speech")]

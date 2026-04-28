@@ -29,7 +29,6 @@ the heavy ML deps.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
@@ -39,15 +38,9 @@ from . import config as _config
 from .config import SUPPORTED_LANGS, validate_lang
 from .errors import InputIOError, OutputExistsError, PodcastScriptError
 from .logging_setup import configure
-from .segment import Segment
 
 if TYPE_CHECKING:
-    import numpy as np
-    import numpy.typing as npt
-
-    from .backends.base import TranscribedSegment
     from .logging_setup import Verbosity
-    from .render import TimestampFormat
 
 # Re-exported so existing imports (``from podcast_script.cli import
 # SUPPORTED_LANGS, validate_lang``) keep working post-POD-016.
@@ -126,65 +119,13 @@ def _resolve_verbosity(verbose: bool, quiet: bool, debug: bool) -> Verbosity:
     return "normal"
 
 
-class _StubBackend:
-    """Placeholder ``WhisperBackend`` until POD-018/019/020 land.
-
-    No model is loaded; ``transcribe`` returns nothing. The smoke-test
-    end-to-end pipeline therefore writes a body with no speech lines —
-    enough to exercise the orchestrator + decode + atomic write before
-    the real backends arrive in SP-3 / SP-4.
-    """
-
-    name = "stub"
-
-    def load(self, model: str, device: str) -> None:
-        del model, device
-
-    def transcribe(
-        self,
-        pcm: npt.NDArray[np.float32],
-        lang: str,
-        sample_rate: int = 16_000,
-    ) -> Iterable[TranscribedSegment]:
-        del pcm, lang, sample_rate
-        return ()
-
-
-class _StubSegmenter:
-    """Placeholder ``Segmenter`` until POD-010 lands.
-
-    Returns a single ``speech`` segment covering the full decoded
-    duration so the orchestrator's transcribe loop runs once and the
-    streaming-contract code path is exercised end-to-end.
-    """
-
-    def segment(self, pcm: npt.NDArray[np.float32]) -> list[Segment]:
-        duration_s = len(pcm) / 16_000
-        return [Segment(start=0.0, end=duration_s, label="speech")]
-
-
-def _stub_render(
-    segments: list[Segment],
-    transcripts: list[TranscribedSegment],
-    fmt: TimestampFormat,
-) -> str:
-    """Placeholder Markdown body until POD-011 lands.
-
-    Emits enough structure that AC-US-1.1 ("the tool writes ``episode.md``
-    next to the input and exits with code 0") holds at the smoke level;
-    the locked output shape (SRS §1.6) lands with POD-011.
-    """
-    del segments, transcripts
-    return f"# transcript (stub renderer; POD-011 ships the real shape)\n\nfmt={fmt}\n"
-
-
 def _run_pipeline(
     *,
     input_path: Path,
     output_path: Path,
     lang: str,
     model: str,
-    backend: str | None,
+    backend: str,
     device: str,
     force: bool,
     debug: bool,
@@ -193,22 +134,26 @@ def _run_pipeline(
 
     The cli is the composition root (ADR-0002 §Decision step 4) — it
     instantiates the concrete stages and hands them to :class:`Pipeline`.
-    Real stages plug in as their tasks land: ``Segmenter`` (POD-010),
-    ``render`` (POD-011), ``WhisperBackend`` + ``select_backend``
-    (POD-018/019/020). ``--force`` / ``--debug`` wiring lands in
-    POD-022/023 / POD-024 respectively; for POD-008 they're accepted but
-    inert beyond reaching the orchestrator.
+    POD-017 plugs the real :class:`WhisperBackend` (faster-whisper or
+    mlx-whisper) in via :func:`~podcast_script.backends.base.select_backend`,
+    replacing the stub used during SP-1/SP-2. ``--force`` / ``--debug``
+    wiring is plumbed but their pipeline-level effects (atomic-rename
+    invariant; debug-artifact dir) live in POD-009 / POD-024 — the cli
+    just hands them through.
     """
-    del backend, force, debug
+    del force, debug
 
+    from .backends.base import select_backend
     from .decode import decode as decode_audio
     from .pipeline import Pipeline
+    from .render import render
+    from .segment import InaSpeechSegmenter
 
     pipeline = Pipeline(
         decode=decode_audio,
-        segmenter=_StubSegmenter(),
-        backend=_StubBackend(),
-        render=_stub_render,
+        segmenter=InaSpeechSegmenter(),
+        backend=select_backend(backend=backend, device=device),
+        render=render,
         model=model,
         device=device,
         lang=lang,

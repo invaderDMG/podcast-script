@@ -1,4 +1,4 @@
-"""Whisper backend Protocol surface + first-run notice helper (ADR-0003).
+"""Whisper backend Protocol surface + first-run notice helper + selector (ADR-0003).
 
 The :class:`Pipeline` (POD-008) depends only on this Protocol; concrete
 backends (``FasterWhisperBackend`` POD-019, ``MlxWhisperBackend`` POD-020)
@@ -7,8 +7,9 @@ inside each implementation's :meth:`WhisperBackend.load` per ADR-0011, so
 nothing in this module triggers a TF / MLX import at CLI startup.
 
 The Protocol is **internal**: SRS §9.3 explicitly does not commit it as a
-stable public API for v1.0.0. ``select_backend`` (POD-017) lands later in
-SP-4 and selects the concrete implementation by platform per ADR-0003.
+stable public API for v1.0.0. :func:`select_backend` (POD-017) picks the
+concrete implementation by platform per ADR-0003 and rejects the only
+illegal pairing — ``--backend mlx-whisper`` off Apple Silicon (UC-1 E7).
 
 POD-021 adds the shared first-run download notice helper used by every
 backend's ``load()``: :func:`emit_first_run_notice_if_missing` emits the
@@ -20,11 +21,15 @@ emit-once logic here keeps faster + mlx mirrors free of duplication.
 from __future__ import annotations
 
 import logging
+import platform
+import sys
 from collections.abc import Callable, Iterable
 from typing import NamedTuple, Protocol
 
 import numpy as np
 import numpy.typing as npt
+
+from ..errors import UsageError
 
 
 class TranscribedSegment(NamedTuple):
@@ -145,3 +150,68 @@ def emit_first_run_notice_if_missing(
             "size_gb": f"{size_gb:g}",
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Backend selection (POD-017 — ADR-0003 / SRS §6 UC-1 E7)
+# ---------------------------------------------------------------------------
+
+
+def _machine() -> str:
+    """Indirection over :func:`platform.machine` so tests can monkeypatch.
+
+    ``select_backend`` consults :data:`sys.platform` and this function;
+    monkeypatching the function is cheaper than mocking the whole
+    :mod:`platform` module and keeps the test seam local to this file.
+    """
+    return platform.machine()
+
+
+def select_backend(*, backend: str, device: str) -> WhisperBackend:
+    """Pick the concrete :class:`WhisperBackend` implementation.
+
+    Per ADR-0003 the rule is:
+
+    * ``backend == "auto"``: ``arm64-darwin`` → mlx-whisper, else
+      faster-whisper.
+    * ``backend == "faster-whisper"``: always faster-whisper, on every
+      platform (Apple Silicon users may opt into faster-whisper for
+      portability over speed — Apple's MLX is faster on M-series chips
+      but faster-whisper is a smaller dep stack).
+    * ``backend == "mlx-whisper"`` off Apple Silicon: refused per
+      SRS §6 UC-1 E7 (``UsageError``, exit 2). The constraint is a
+      hard one — mlx-whisper depends on Apple's MLX framework which
+      is darwin-arm64-only.
+
+    ``device`` is accepted for API symmetry with the ``--device`` flag
+    but isn't consulted here — the constraint UC-1 E7 covers is
+    platform-only. The actual device handling happens inside each
+    backend's :meth:`WhisperBackend.load` (``device="cuda"`` is
+    rejected by faster-whisper at load time on a CPU-only host, etc.).
+
+    The returned instance is *unloaded* — the caller (``Pipeline.run``)
+    invokes :meth:`WhisperBackend.load` once during pipeline startup so
+    the heavy library import happens at the right time per ADR-0011.
+    The lazy-import pattern means importing :mod:`backends.base` itself
+    does not pull in TF / MLX / faster-whisper.
+    """
+    del device  # see docstring — not part of the selection decision
+    is_apple_silicon = sys.platform == "darwin" and _machine() == "arm64"
+
+    if backend == "mlx-whisper" and not is_apple_silicon:
+        raise UsageError(
+            "--backend mlx-whisper requires Apple Silicon (arm64-darwin); "
+            f"detected {sys.platform}/{_machine()}. "
+            "Use --backend faster-whisper or --backend auto on this host."
+        )
+
+    if backend == "faster-whisper" or (backend == "auto" and not is_apple_silicon):
+        from .faster import FasterWhisperBackend
+
+        return FasterWhisperBackend()
+
+    # Either backend == "mlx-whisper" on Apple Silicon, or
+    # backend == "auto" on Apple Silicon — both pick mlx.
+    from .mlx import MlxWhisperBackend
+
+    return MlxWhisperBackend()

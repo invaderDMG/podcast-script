@@ -57,12 +57,14 @@ if [[ -z "$speech_in" || -z "$music_in" ]]; then
     exit 1
 fi
 
-# SRS §14.1 mix recipe:
-#   - 0..25 s    speech alone
-#   - 25..35 s   speech + music bed (-12 dB on music so speech stays
-#                                     dominant; the segmenter still
-#                                     detects the music presence)
-#   - 35..60 s   speech alone
+# SRS §14.1 mix recipe — music bed *bookended* by speech (not mixed
+# under it; quiet music under speech gets masked and labeled `speech`
+# by the segmenter — SRS Risk #3):
+#   - 0..25 s    speech.mp3[0:25]   speech alone
+#   - 25..35 s   music.mp3[0:10]    music alone
+#   - 35..60 s   speech.mp3[35:60]  speech resumes (skips the 25-35 s
+#                                    portion of the source so wall-clock
+#                                    timestamps stay natural)
 # 16 kHz mono throughout — matches the CLI's canonical decode (ADR-0016).
 #
 # We build the intermediate WAV in /tmp to avoid leaving artifacts in
@@ -74,10 +76,10 @@ trap 'rm -rf "$tmp"' EXIT
 ffmpeg -y -hide_banner -loglevel error \
     -i "$speech_in" -i "$music_in" \
     -filter_complex "
-        [0:a]aformat=sample_fmts=s16:channel_layouts=mono:sample_rates=16000,atrim=0:60,asetpts=PTS-STARTPTS[speech];
-        [1:a]aformat=sample_fmts=s16:channel_layouts=mono:sample_rates=16000,atrim=0:10,asetpts=PTS-STARTPTS,volume=0.25,adelay=25000|25000,apad=whole_dur=60[music];
-        [speech][music]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[mix];
-        [mix]aformat=sample_fmts=s16:channel_layouts=mono:sample_rates=16000[out]
+        [0:a]aformat=sample_fmts=s16:channel_layouts=mono:sample_rates=16000,atrim=0:25,asetpts=PTS-STARTPTS[s_pre];
+        [1:a]aformat=sample_fmts=s16:channel_layouts=mono:sample_rates=16000,atrim=0:10,asetpts=PTS-STARTPTS[m];
+        [0:a]aformat=sample_fmts=s16:channel_layouts=mono:sample_rates=16000,atrim=35:60,asetpts=PTS-STARTPTS[s_post];
+        [s_pre][m][s_post]concat=n=3:v=0:a=1[out]
     " \
     -map "[out]" \
     -ac 1 -ar 16000 \

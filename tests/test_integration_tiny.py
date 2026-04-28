@@ -136,9 +136,7 @@ def test_cli_tiny_pipeline_produces_structural_markdown(
     # trigger inaSpeechSegmenter's z-score normalisation on
     # near-zero-variance frames.
     for noise in ("Warning:", "DeprecationWarning", "RuntimeWarning"):
-        assert noise not in result.stderr, (
-            f"{noise!r} leaked to stderr; stderr={result.stderr!r}"
-        )
+        assert noise not in result.stderr, f"{noise!r} leaked to stderr; stderr={result.stderr!r}"
 
     body = output_path.read_text(encoding="utf-8")
     _assert_structural_invariants(body)

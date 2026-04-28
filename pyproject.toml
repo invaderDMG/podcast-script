@@ -74,8 +74,12 @@ addopts = ["-ra", "--strict-markers", "--strict-config", "-m", "not slow"]
 # the grep contract. Production audio routinely has silent intros /
 # outros, which trigger inaSpeechSegmenter's z-score normalisation on
 # near-zero-variance frames, so the suppression has to be airtight.
-# Whitelisted entries below are upstream issues we cannot fix without
-# bumping the segmenter — tracked under SPK-1 in PROJECT_PLAN §10.1.
+#
+# No whitelist needed at the pytest layer: known-benign upstream noise
+# (the SciPy DeprecationWarning + the numpy invalid-value
+# RuntimeWarnings — SPK-1 fragility, PROJECT_PLAN §10.1 R-1) is silenced
+# at the runtime boundary in `src/podcast_script/segment.py`. Adding
+# entries here would mask a future regression in our own code.
 filterwarnings = ["error"]
 markers = [
     # Tier 3 integration tests on the real examples/sample.mp3 fixture

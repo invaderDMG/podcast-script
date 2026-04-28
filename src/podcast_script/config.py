@@ -147,9 +147,14 @@ def merge(
     if "lang" not in merged:
         raise _missing_lang_error()
 
-    merged["input"] = Path(merged["input"])
+    # ADR-0013 §Decision step 5: coerce path-typed fields with
+    # ``Path(str).expanduser().resolve()`` so a TOML ``output =
+    # "~/transcripts/ep.md"`` (or a relative path) reaches the pipeline
+    # already absolute and tilde-expanded. Without this, downstream
+    # checks like ``_check_output_path`` fail on the unexpanded ``~``.
+    merged["input"] = Path(merged["input"]).expanduser().resolve()
     if merged["output"] is not None:
-        merged["output"] = Path(merged["output"])
+        merged["output"] = Path(merged["output"]).expanduser().resolve()
 
     try:
         cfg = Config(**merged)
@@ -222,9 +227,7 @@ def _closest_supported_lang(code: str) -> str | None:
 
     Ties break by :data:`SUPPORTED_LANGS` order so the suggestion is
     deterministic across runs (e.g. ``es`` wins over ``en`` if both are
-    equidistant). Mirrors the cli helper of the same name; the
-    duplication is small enough not to warrant a shared helper module
-    until a third caller appears.
+    equidistant).
     """
     best: tuple[int, str] | None = None
     for candidate in SUPPORTED_LANGS:

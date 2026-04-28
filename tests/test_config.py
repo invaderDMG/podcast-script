@@ -91,6 +91,26 @@ def test_merge_raises_when_lang_is_unset_anywhere(tmp_path: Path) -> None:
         assert code in msg
 
 
+def test_merge_expands_tilde_in_toml_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """ADR-0013 §Decision step 5 — ``Path(str).expanduser().resolve()``.
+
+    A TOML ``output = "~/episodes/ep.md"`` must reach the pipeline as
+    ``<HOME>/episodes/ep.md`` already absolute, otherwise downstream
+    code (``_check_output_path``, atomic-write) sees a literal ``~``
+    in the path and the run fails for the wrong reason.
+    """
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / "episodes").mkdir()
+
+    toml_defaults = {"lang": "es", "output": "~/episodes/ep.md"}
+    cli_overrides = {"input": "~/in.mp3", "lang": None}
+
+    cfg = config.merge(toml_defaults=toml_defaults, cli_overrides=cli_overrides)
+
+    assert cfg.input == (tmp_path / "in.mp3").resolve()
+    assert cfg.output == (tmp_path / "episodes" / "ep.md").resolve()
+
+
 def test_merge_rejects_unsupported_lang_from_toml(tmp_path: Path) -> None:
     """AC-US-4.4 — config-loaded ``lang = "ja"`` triggers the same
     AC-US-1.5 validation as a CLI ``--lang ja`` would (exit 2).

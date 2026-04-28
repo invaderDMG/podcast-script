@@ -636,3 +636,9 @@ class TestCliConfigMerge:
         # Same logfmt token as any other usage error (ADR-0006 + ADR-0008).
         assert "event=usage_error" in result.stderr
         assert "ja" in result.stderr
+        # AC-US-4.4 says the same validation as AC-US-1.5 fires, which
+        # includes the did-you-mean hint when within edit-distance 2.
+        # ``ja`` is distance 1 from ``ca`` (j→c) — pin the suggestion so
+        # a future refactor that bypasses ``validate_lang`` for the TOML
+        # path can't pass this test silently.
+        assert "did you mean `ca`" in result.stderr

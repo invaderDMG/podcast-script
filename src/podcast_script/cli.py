@@ -29,6 +29,7 @@ the heavy ML deps.
 
 from __future__ import annotations
 
+import contextlib
 import platform
 import sys
 import time
@@ -43,6 +44,7 @@ from .config import SUPPORTED_LANGS, validate_lang
 from .errors import InputIOError, OutputExistsError, PodcastScriptError
 from .logging_setup import configure
 from .pipeline import RunSummary
+from .progress import Progress, make_progress
 
 if TYPE_CHECKING:
     from .backends.base import WhisperBackend
@@ -147,6 +149,7 @@ def _run_pipeline(
     model: str,
     backend_instance: WhisperBackend,
     device: str,
+    progress: Progress | None,
     force: bool,
     debug: bool,
 ) -> RunSummary:
@@ -154,14 +157,14 @@ def _run_pipeline(
 
     The cli is the composition root (ADR-0002 §Decision step 4) — it
     instantiates the concrete stages and hands them to :class:`Pipeline`.
-    The ``backend_instance`` is resolved by ``main()`` via
-    :func:`~podcast_script.backends.base.select_backend` so the
-    ``event=backend_selected`` lifecycle event (ADR-0012) can fire
-    *before* this function is called — that way the line surfaces even
-    when tests stub ``_run_pipeline`` to a no-op. ``--force`` /
-    ``--debug`` wiring is plumbed but their pipeline-level effects
-    (atomic-rename invariant; debug-artifact dir) live in POD-009 /
-    POD-024 — the cli just hands them through.
+    Both ``backend_instance`` (via ``select_backend``) and ``progress``
+    (via :func:`~podcast_script.progress.make_progress`) are resolved
+    by ``main()`` so their lifecycle events (``backend_selected``) and
+    log-handler-Console binding (ADR-0008) can be set up before the
+    pipeline runs. ``--force`` / ``--debug`` wiring is plumbed but
+    their pipeline-level effects (atomic-rename invariant;
+    debug-artifact dir) live in POD-009 / POD-024 — the cli just hands
+    them through.
     """
     del force, debug
 
@@ -178,6 +181,7 @@ def _run_pipeline(
         model=model,
         device=device,
         lang=lang,
+        progress=progress,
     )
     return pipeline.run(input_path=input_path, output_path=output_path)
 
@@ -297,16 +301,35 @@ def main(
 
         resolved_output = cfg.output if cfg.output is not None else cfg.input.with_suffix(".md")
         _check_output_path(resolved_output, force=cfg.force)
-        summary = _run_pipeline(
-            input_path=cfg.input,
-            output_path=resolved_output,
-            lang=cfg.lang,
-            model=cfg.model,
-            backend_instance=backend_instance,
-            device=cfg.device,
-            force=cfg.force,
-            debug=debug,
-        )
+
+        # POD-013 — three-phase progress bar (decode / segment /
+        # transcribe). Hoisted up here (not inside ``_run_pipeline``)
+        # so we can re-configure the log handler to share the Progress
+        # console per ADR-0008 — keeps progress + log lines from
+        # tearing on a real TTY. ``make_progress`` honours AC-US-3.2
+        # by disabling itself on non-TTY stderr so pipe / CI captures
+        # see no ANSI.
+        #
+        # ``--quiet`` constructs no Progress at all per ADR-0008
+        # §Decision step 4 / AC-US-3.3 — POD-014 will lift this gate
+        # once the full verbosity matrix lands. The ``with`` block
+        # guarantees ``Progress.stop()`` even if the pipeline raises;
+        # ``nullcontext()`` keeps the call shape symmetric on the
+        # ``--quiet`` path.
+        bar = make_progress() if verbosity != "quiet" else None
+        log = configure(verbosity, progress=bar)
+        with bar if bar is not None else contextlib.nullcontext():
+            summary = _run_pipeline(
+                input_path=cfg.input,
+                output_path=resolved_output,
+                lang=cfg.lang,
+                model=cfg.model,
+                backend_instance=backend_instance,
+                device=cfg.device,
+                progress=bar,
+                force=cfg.force,
+                debug=debug,
+            )
 
         # SRS UC-1 step 10 — locked logfmt summary line.
         # Shape: ``level=info event=done input=<path> output=<path>

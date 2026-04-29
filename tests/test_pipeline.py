@@ -380,3 +380,113 @@ def test_transcribed_segments_re_anchored_to_episode_time(tmp_path: Path) -> Non
     assert seen[0].start == pytest.approx(4.1)
     assert seen[0].end == pytest.approx(4.9)
     assert seen[0].text == "hola"
+
+
+# ---------------------------------------------------------------------------
+# POD-013 — progress bar wiring (ADR-0010 — pipeline-level, per-segment ticks)
+# ---------------------------------------------------------------------------
+
+
+def test_pipeline_advances_each_phase_task_once_POD_013(tmp_path: Path) -> None:
+    """ADR-0010 — decode + segment are atomic phases (one tick each);
+    transcribe ticks once per speech segment regardless of backend
+    yield cadence. We capture the advance() calls on a recording
+    Progress so we can assert the order + counts without rendering.
+    """
+    from podcast_script.progress import (
+        DECODE_TASK,
+        SEGMENT_TASK,
+        TRANSCRIBE_TASK,
+        make_progress,
+    )
+
+    input_path = tmp_path / "episode.mp3"
+    input_path.write_bytes(b"")
+    output_path = tmp_path / "episode.md"
+
+    # Three speech segments → transcribe should tick three times.
+    segments = [
+        Segment(0.0, 1.0, "speech"),
+        Segment(1.0, 2.0, "music"),
+        Segment(2.0, 3.0, "speech"),
+        Segment(3.0, 4.0, "speech"),
+    ]
+    pipeline, _backend, _segmenter = _make_pipeline(
+        pcm=_silence_pcm(4.0),
+        segments=segments,
+    )
+
+    bar = make_progress()
+    advances: list[tuple[int, float]] = []
+    real_advance = bar.advance
+
+    def recording_advance(task_id: object, advance: float = 1.0) -> None:
+        advances.append((int(task_id), advance))  # type: ignore[arg-type]
+        real_advance(task_id, advance)  # type: ignore[arg-type]
+
+    bar.advance = recording_advance  # type: ignore[method-assign]
+    pipeline.progress = bar
+
+    pipeline.run(input_path=input_path, output_path=output_path)
+
+    decode_ticks = [a for a in advances if a[0] == DECODE_TASK]
+    segment_ticks = [a for a in advances if a[0] == SEGMENT_TASK]
+    transcribe_ticks = [a for a in advances if a[0] == TRANSCRIBE_TASK]
+
+    assert len(decode_ticks) == 1, advances
+    assert len(segment_ticks) == 1, advances
+    # Three speech segments out of four total — transcribe ticks 3 times.
+    assert len(transcribe_ticks) == 3, advances
+
+
+def test_pipeline_sets_transcribe_total_to_speech_segment_count_POD_013(
+    tmp_path: Path,
+) -> None:
+    """ADR-0010 — transcribe task total is set after the segmenter pass
+    so the bar's percentage is meaningful. Six segments, two of them
+    speech → transcribe.total == 2.
+    """
+    from podcast_script.progress import TRANSCRIBE_TASK, make_progress
+
+    input_path = tmp_path / "episode.mp3"
+    input_path.write_bytes(b"")
+    output_path = tmp_path / "episode.md"
+
+    segments = [
+        Segment(0.0, 1.0, "noise"),
+        Segment(1.0, 2.0, "speech"),
+        Segment(2.0, 3.0, "music"),
+        Segment(3.0, 4.0, "silence"),
+        Segment(4.0, 5.0, "speech"),
+        Segment(5.0, 6.0, "music"),
+    ]
+    pipeline, _backend, _segmenter = _make_pipeline(
+        pcm=_silence_pcm(6.0),
+        segments=segments,
+    )
+    bar = make_progress()
+    pipeline.progress = bar
+
+    pipeline.run(input_path=input_path, output_path=output_path)
+
+    assert bar.tasks[TRANSCRIBE_TASK].total == 2
+
+
+def test_pipeline_works_without_progress_bar_POD_013(tmp_path: Path) -> None:
+    """``Pipeline.progress = None`` is the default — Tier 1 unit tests
+    that don't pass a Progress must keep working unchanged. This
+    guards against a regression where the orchestrator unconditionally
+    dereferences the field.
+    """
+    input_path = tmp_path / "episode.mp3"
+    input_path.write_bytes(b"")
+    output_path = tmp_path / "episode.md"
+
+    pipeline, _backend, _segmenter = _make_pipeline(
+        pcm=_silence_pcm(2.0),
+        segments=[Segment(0.0, 2.0, "speech")],
+    )
+    # Default — no progress wired
+    pipeline.run(input_path=input_path, output_path=output_path)
+
+    assert output_path.is_file()

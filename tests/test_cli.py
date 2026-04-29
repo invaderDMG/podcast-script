@@ -834,3 +834,135 @@ class TestEventCatalogue:
         assert events == ["startup", "config_loaded", "backend_selected", "done"], (
             f"unexpected event order; got {events!r}"
         )
+
+
+class TestVerbosityMatrix:
+    """POD-014 — SRS §9.1 grammar enforcement + AC-US-3.5 levels.
+
+    Mutual exclusion is documented as ``[-v, --verbose | -q, --quiet
+    | --debug]`` (SRS §9.1 line 423). Combining any two is a usage
+    error per ADR-0006 (exit 2). Within a single setting, the logger
+    level is what AC-US-3.5 commits to.
+    """
+
+    @pytest.mark.parametrize(
+        "flags",
+        [
+            ["-v", "-q"],
+            ["--verbose", "--quiet"],
+            ["-v", "--debug"],
+            ["--verbose", "--debug"],
+            ["-q", "--debug"],
+            ["--quiet", "--debug"],
+            ["-v", "-q", "--debug"],
+        ],
+    )
+    def test_combining_verbosity_flags_exits_2(
+        self, runner: CliRunner, tmp_path: Path, flags: list[str]
+    ) -> None:
+        """SRS §9.1 grammar — at most one of -v / -q / --debug. Combining
+        any two is a UsageError (exit 2)."""
+        input_file = _touch(tmp_path, "episode.mp3")
+        result = runner.invoke(app, [str(input_file), "--lang", "es", *flags])
+
+        assert result.exit_code == 2, f"flags={flags} stderr={result.stderr!r}"
+        assert "event=usage_error" in result.stderr
+        # Message must name the offending grammar rule so the user can
+        # self-correct.
+        for fragment in ("verbose", "quiet", "debug"):
+            assert fragment in result.stderr.lower(), (
+                f"missing {fragment!r}; flags={flags} stderr={result.stderr!r}"
+            )
+
+    def test_quiet_emits_no_info_events(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """AC-US-3.3 / AC-US-3.5 — ``-q`` filters ``level=info`` (and
+        below) so the lifecycle events (``startup`` / ``config_loaded``
+        / ``backend_selected`` / ``done``) don't surface. Only error
+        lines (none on the happy path) appear.
+        """
+        from podcast_script import cli as cli_module
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: _RUN_SUMMARY_STUB)
+        input_file = _touch(tmp_path, "episode.mp3")
+
+        result = runner.invoke(app, [str(input_file), "--lang", "es", "-q"])
+
+        assert result.exit_code == 0, f"stderr={result.stderr!r}"
+        # No info lines means no podcast_script-emitted events at all on
+        # the happy path. Empty (or only whitespace) stderr is acceptable.
+        assert "level=info" not in result.stderr, f"stderr={result.stderr!r}"
+        assert "event=" not in result.stderr, f"stderr={result.stderr!r}"
+
+    def test_default_verbosity_emits_info_events(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """AC-US-3.5 default branch — ``level=info`` events visible on
+        a happy path. Sanity that the pre-existing lifecycle events
+        survive the verbosity-matrix refactor.
+        """
+        from podcast_script import cli as cli_module
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: _RUN_SUMMARY_STUB)
+        input_file = _touch(tmp_path, "episode.mp3")
+
+        result = runner.invoke(app, [str(input_file), "--lang", "es"])
+
+        assert result.exit_code == 0, f"stderr={result.stderr!r}"
+        assert "level=info" in result.stderr
+        assert "event=startup" in result.stderr
+        assert "event=done" in result.stderr
+
+    @pytest.mark.parametrize("flag", ["-v", "--verbose", "--debug"])
+    def test_verbose_and_debug_set_logger_to_debug_level(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        flag: str,
+    ) -> None:
+        """AC-US-3.5 — ``-v`` ⇒ debug-and-above; ``--debug`` ⇒ same level
+        plus the artifact dir (POD-024 owns the dir). Both raise the
+        logger threshold to DEBUG so future debug-level emissions
+        surface.
+        """
+        import logging
+
+        from podcast_script import cli as cli_module
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: _RUN_SUMMARY_STUB)
+        input_file = _touch(tmp_path, "episode.mp3")
+
+        result = runner.invoke(app, [str(input_file), "--lang", "es", flag])
+
+        assert result.exit_code == 0, f"flag={flag} stderr={result.stderr!r}"
+        # Level set on the package logger is what AC-US-3.5 commits to.
+        assert logging.getLogger("podcast_script").level == logging.DEBUG, (
+            f"flag={flag} expected logger at DEBUG level"
+        )
+
+    def test_non_tty_stderr_emits_no_ansi_AC_US_3_2(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """AC-US-3.2 — when stderr isn't a TTY (CliRunner captures, real
+        pipes), no ANSI escape sequences appear; the logfmt event
+        stream serves as the plain-text per-phase update.
+        """
+        from podcast_script import cli as cli_module
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: _RUN_SUMMARY_STUB)
+        input_file = _touch(tmp_path, "episode.mp3")
+
+        result = runner.invoke(app, [str(input_file), "--lang", "es"])
+
+        assert result.exit_code == 0, f"stderr={result.stderr!r}"
+        # The standard ANSI ESC byte (\x1b) MUST NOT appear anywhere in
+        # captured stderr — that's the user's grep contract on a
+        # non-TTY pipe.
+        assert "\x1b" not in result.stderr, (
+            f"unexpected ANSI escape in non-TTY stderr; stderr={result.stderr!r}"
+        )
+        # …but the logfmt events still fire, so the user has the
+        # plain-text per-phase update AC-US-3.2 promises.
+        assert "level=info" in result.stderr

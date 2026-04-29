@@ -41,7 +41,7 @@ import typer
 from . import config as _config
 from .backends.base import select_backend
 from .config import SUPPORTED_LANGS, validate_lang
-from .errors import InputIOError, OutputExistsError, PodcastScriptError
+from .errors import InputIOError, OutputExistsError, PodcastScriptError, UsageError
 from .logging_setup import configure
 from .pipeline import RunSummary
 from .progress import Progress, make_progress
@@ -114,10 +114,27 @@ def _check_output_path(resolved_output: Path, *, force: bool) -> None:
 def _resolve_verbosity(verbose: bool, quiet: bool, debug: bool) -> Verbosity:
     """Map the three flag booleans to a :data:`Verbosity` label.
 
-    Mutual-exclusion enforcement and a richer matrix land in POD-014
-    (SP-5); for POD-006 we just pick the strongest signal so log output
-    behaves consistently when more than one is passed by accident.
+    SRS §9.1 grammar — ``[-v, --verbose | -q, --quiet | --debug]`` —
+    documents the three flags as mutually exclusive: at most one may
+    be set. Combining any two is a :class:`UsageError` (exit 2 per
+    ADR-0006). The cli enforces this guard *before* any pipeline work
+    begins so a misconfigured invocation costs nothing more than an
+    error message.
+
+    Per AC-US-3.5, the resulting label drives the logger level via
+    :data:`podcast_script.logging_setup._LEVEL_FOR_VERBOSITY`:
+
+    * ``quiet``   — only ``level=error`` lines on stderr.
+    * ``normal``  — ``level=info`` and above + progress bar.
+    * ``verbose`` — ``level=debug`` and above + progress bar.
+    * ``debug``   — same level as verbose plus the artifact dir of
+      US-7 (POD-024 owns the dir-emission half).
     """
+    chosen = sum((verbose, quiet, debug))
+    if chosen > 1:
+        raise UsageError(
+            "--verbose (-v), --quiet (-q), and --debug are mutually exclusive; pass at most one"
+        )
     if debug:
         return "debug"
     if verbose:
@@ -247,17 +264,26 @@ def main(
     ] = False,
 ) -> None:
     """Transcribe a podcast audio file to Markdown with music-segment markers."""
-    verbosity = _resolve_verbosity(verbose, quiet, debug)
+    # Pre-configure with a permissive default so a UsageError raised by
+    # ``_resolve_verbosity`` (the SRS §9.1 mutual-exclusion guard) has a
+    # working logger to route through the cli's catch-and-translate
+    # handler. Re-configured with the resolved verbosity below if the
+    # guard passes.
+    verbosity: Verbosity = "normal"
     log = configure(verbosity, progress=None)
-
-    # ADR-0012 lifecycle — ``event=startup`` fires once argv has been
-    # parsed by typer and before any work begins. Lets shell wrappers
-    # see "tool started" before model load (which can take seconds on a
-    # cold cache).
-    log.info("", extra={"event": "startup"})
     wall_start = time.monotonic()
 
     try:
+        verbosity = _resolve_verbosity(verbose, quiet, debug)
+        log = configure(verbosity, progress=None)
+
+        # ADR-0012 lifecycle — ``event=startup`` fires once argv has been
+        # parsed by typer and before any work begins. Lets shell wrappers
+        # see "tool started" before model load (which can take seconds
+        # on a cold cache). Emitted under the resolved verbosity so
+        # ``--quiet`` correctly drops it (AC-US-3.5).
+        log.info("", extra={"event": "startup"})
+
         # POD-016 — load TOML defaults from the locked path (None = absent)
         # then merge with whatever the user typed on argv. ``cli_overrides``
         # carries every flag value as-is; entries with ``None`` mean

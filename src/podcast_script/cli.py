@@ -29,12 +29,16 @@ the heavy ML deps.
 
 from __future__ import annotations
 
+import platform
+import sys
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
 import typer
 
 from . import config as _config
+from .backends.base import select_backend
 from .config import SUPPORTED_LANGS, validate_lang
 from .errors import InputIOError, OutputExistsError, PodcastScriptError
 from .logging_setup import configure
@@ -124,14 +128,15 @@ def _resolve_verbosity(verbose: bool, quiet: bool, debug: bool) -> Verbosity:
 def _platform_tag() -> str:
     """Concise platform identifier for the ``event=backend_selected`` line.
 
-    Format: ``<sys.platform>-<machine>`` (``darwin-arm64``, ``linux-x86_64``,
-    …). Lets shell wrappers grep one consistent token instead of trying
-    to reconstruct the platform from environment.
+    Format: ``<machine>-<sys.platform>`` (``arm64-darwin``,
+    ``x86_64-linux``, …) — same convention as the E7 error in
+    :func:`~podcast_script.backends.base.select_backend`, the SRS UC-1
+    step 4 platform-detection rule, and ADR-0003. Once v1.0 ships, the
+    value of this token is part of the implicit grep contract (Risk
+    #9), so the surface stays consistent across error path + success
+    path.
     """
-    import platform as _platform
-    import sys as _sys
-
-    return f"{_sys.platform}-{_platform.machine()}"
+    return f"{platform.machine()}-{sys.platform}"
 
 
 def _run_pipeline(
@@ -238,8 +243,6 @@ def main(
     ] = False,
 ) -> None:
     """Transcribe a podcast audio file to Markdown with music-segment markers."""
-    import time as _time
-
     verbosity = _resolve_verbosity(verbose, quiet, debug)
     log = configure(verbosity, progress=None)
 
@@ -248,7 +251,7 @@ def main(
     # see "tool started" before model load (which can take seconds on a
     # cold cache).
     log.info("", extra={"event": "startup"})
-    wall_start = _time.monotonic()
+    wall_start = time.monotonic()
 
     try:
         # POD-016 — load TOML defaults from the locked path (None = absent)
@@ -281,8 +284,6 @@ def main(
         # UC-1 E7) lives in ``select_backend``. Resolving the backend
         # here (not inside ``_run_pipeline``) lets the event surface
         # under any test that stubs ``_run_pipeline``.
-        from .backends.base import select_backend
-
         backend_instance = select_backend(backend=cfg.backend, device=cfg.device)
         log.info(
             "",
@@ -313,20 +314,19 @@ def main(
         # duration_wall_s=<n>``. Order is preserved by
         # :class:`~podcast_script.logging_setup.LogfmtFormatter` (insertion
         # order). Treated as part of the v1.0 grep contract per Risk #9.
-        if summary is not None:
-            log.info(
-                "",
-                extra={
-                    "event": "done",
-                    "input": str(cfg.input),
-                    "output": str(resolved_output),
-                    "backend": backend_instance.name,
-                    "model": cfg.model,
-                    "lang": cfg.lang,
-                    "duration_in_s": f"{summary.duration_in_s:.3f}",
-                    "duration_wall_s": f"{_time.monotonic() - wall_start:.3f}",
-                },
-            )
+        log.info(
+            "",
+            extra={
+                "event": "done",
+                "input": str(cfg.input),
+                "output": str(resolved_output),
+                "backend": backend_instance.name,
+                "model": cfg.model,
+                "lang": cfg.lang,
+                "duration_in_s": f"{summary.duration_in_s:.3f}",
+                "duration_wall_s": f"{time.monotonic() - wall_start:.3f}",
+            },
+        )
     except PodcastScriptError as exc:
         log.error("", extra={"event": exc.event, "code": exc.exit_code, "cause": str(exc)})
         raise typer.Exit(exc.exit_code) from exc

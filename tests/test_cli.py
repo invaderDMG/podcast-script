@@ -16,6 +16,14 @@ from typer.testing import CliRunner
 from podcast_script import config as config_module
 from podcast_script.cli import SUPPORTED_LANGS, app, validate_lang
 from podcast_script.errors import UsageError
+from podcast_script.pipeline import RunSummary
+
+# Default stub for tests that don't care about ``RunSummary`` fields —
+# ``_run_pipeline`` is annotated ``-> RunSummary`` (non-Optional), so
+# stubs must honour the contract. ``duration_in_s=0.0`` keeps the
+# downstream ``event=done`` line well-formed without leaking pipeline
+# internals into the test.
+_RUN_SUMMARY_STUB = RunSummary(duration_in_s=0.0)
 
 
 @pytest.fixture(autouse=True)
@@ -175,7 +183,7 @@ class TestCliGrammarSurface:
         # exercise the actual behaviour.
         from podcast_script import cli as cli_module
 
-        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: None)
+        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: _RUN_SUMMARY_STUB)
 
         input_file = _touch(tmp_path, "episode.mp3")
         output_file = input_file.with_suffix(".md")
@@ -240,7 +248,7 @@ class TestCliGrammarSurface:
     ) -> None:
         from podcast_script import cli as cli_module
 
-        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: None)
+        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: _RUN_SUMMARY_STUB)
 
         input_file = _touch(tmp_path, "episode.mp3")
         result = runner.invoke(
@@ -336,7 +344,7 @@ class TestOutputExistsCheck:
         # avoids the exit-6 refusal — pipeline is stubbed.
         from podcast_script import cli as cli_module
 
-        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: None)
+        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: _RUN_SUMMARY_STUB)
 
         input_file = _touch(tmp_path, "episode.mp3")
         output_file = tmp_path / "episode.md"
@@ -355,11 +363,14 @@ class TestOutputExistsCheck:
         from podcast_script import cli as cli_module
 
         called: list[Path] = []
-        monkeypatch.setattr(
-            cli_module,
-            "_run_pipeline",
-            lambda **kw: called.append(kw["output_path"]),
-        )
+
+        def _record(**kw: object) -> RunSummary:
+            output_path = kw["output_path"]
+            assert isinstance(output_path, Path)
+            called.append(output_path)
+            return _RUN_SUMMARY_STUB
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", _record)
 
         input_file = _touch(tmp_path, "episode.mp3")
         result = runner.invoke(app, [str(input_file), "--lang", "es"])
@@ -447,10 +458,11 @@ class TestForceOverwrite:
 
         fresh = "# fresh transcript\n\nbody from this run\n"
 
-        def fake_run_pipeline(**kwargs: object) -> None:
+        def fake_run_pipeline(**kwargs: object) -> RunSummary:
             output_path = kwargs["output_path"]
             assert isinstance(output_path, Path)
             atomic_module.atomic_write(output_path, fresh)
+            return _RUN_SUMMARY_STUB
 
         monkeypatch.setattr(cli_module, "_run_pipeline", fake_run_pipeline)
 
@@ -475,10 +487,11 @@ class TestForceOverwrite:
 
         fresh = "# fresh\n"
 
-        def fake_run_pipeline(**kwargs: object) -> None:
+        def fake_run_pipeline(**kwargs: object) -> RunSummary:
             output_path = kwargs["output_path"]
             assert isinstance(output_path, Path)
             atomic_module.atomic_write(output_path, fresh)
+            return _RUN_SUMMARY_STUB
 
         monkeypatch.setattr(cli_module, "_run_pipeline", fake_run_pipeline)
 
@@ -505,8 +518,9 @@ class TestForceOverwrite:
 
         seen: dict[str, object] = {}
 
-        def fake_run_pipeline(**kwargs: object) -> None:
+        def fake_run_pipeline(**kwargs: object) -> RunSummary:
             seen.update(kwargs)
+            return _RUN_SUMMARY_STUB
 
         monkeypatch.setattr(cli_module, "_run_pipeline", fake_run_pipeline)
 
@@ -530,7 +544,7 @@ class TestForceOverwrite:
         from podcast_script import cli as cli_module
         from podcast_script.errors import DecodeError
 
-        def fake_run_pipeline(**_kwargs: object) -> None:
+        def fake_run_pipeline(**_kwargs: object) -> RunSummary:
             raise DecodeError("ffmpeg returned nonzero exit (synthetic for AC-US-6.3)")
 
         monkeypatch.setattr(cli_module, "_run_pipeline", fake_run_pipeline)
@@ -581,8 +595,9 @@ class TestCliConfigMerge:
 
         seen: dict[str, object] = {}
 
-        def fake_run_pipeline(**kwargs: object) -> None:
+        def fake_run_pipeline(**kwargs: object) -> RunSummary:
             seen.update(kwargs)
+            return _RUN_SUMMARY_STUB
 
         monkeypatch.setattr(cli_module, "_run_pipeline", fake_run_pipeline)
 
@@ -608,7 +623,12 @@ class TestCliConfigMerge:
         monkeypatch.setattr(config_module, "DEFAULT_CONFIG_PATH", config_path)
 
         seen: dict[str, object] = {}
-        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **kw: seen.update(kw))
+
+        def _capture(**kw: object) -> RunSummary:
+            seen.update(kw)
+            return _RUN_SUMMARY_STUB
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", _capture)
 
         input_file = _touch(tmp_path, "episode.mp3")
         result = runner.invoke(app, [str(input_file), "--lang", "en", "--model", "tiny"])
@@ -673,7 +693,7 @@ class TestEventCatalogue:
         emitted (argv parsed, before any work)."""
         from podcast_script import cli as cli_module
 
-        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: None)
+        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: _RUN_SUMMARY_STUB)
         input_file = _touch(tmp_path, "episode.mp3")
 
         result = runner.invoke(app, [str(input_file), "--lang", "es"])
@@ -693,7 +713,7 @@ class TestEventCatalogue:
         cli + TOML merge (AC-US-4.1/4.2 path) succeeds."""
         from podcast_script import cli as cli_module
 
-        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: None)
+        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: _RUN_SUMMARY_STUB)
         input_file = _touch(tmp_path, "episode.mp3")
 
         result = runner.invoke(app, [str(input_file), "--lang", "es"])
@@ -716,7 +736,7 @@ class TestEventCatalogue:
         """
         from podcast_script import cli as cli_module
 
-        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: None)
+        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: _RUN_SUMMARY_STUB)
         input_file = _touch(tmp_path, "episode.mp3")
 
         result = runner.invoke(
@@ -751,9 +771,7 @@ class TestEventCatalogue:
         """
         from podcast_script import cli as cli_module
 
-        def fake_run(*, return_summary: object = None, **_kwargs: object) -> object:
-            from podcast_script.pipeline import RunSummary
-
+        def fake_run(**_kwargs: object) -> RunSummary:
             return RunSummary(duration_in_s=42.5)
 
         monkeypatch.setattr(cli_module, "_run_pipeline", fake_run)
@@ -802,9 +820,7 @@ class TestEventCatalogue:
         """
         from podcast_script import cli as cli_module
 
-        def fake_run(**_kwargs: object) -> object:
-            from podcast_script.pipeline import RunSummary
-
+        def fake_run(**_kwargs: object) -> RunSummary:
             return RunSummary(duration_in_s=1.0)
 
         monkeypatch.setattr(cli_module, "_run_pipeline", fake_run)

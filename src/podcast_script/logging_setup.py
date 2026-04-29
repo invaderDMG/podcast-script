@@ -116,9 +116,14 @@ class _SoftWrapRichHandler(RichHandler):
     """
 
     def emit(self, record: logging.LogRecord) -> None:
-        # We bypass RichHandler.emit's renderable-construction so the
-        # plain logfmt string flows straight through. Errors land on
-        # the Handler.handleError path same as the parent class.
+        # Records carrying ``exc_info`` keep the parent's rich-traceback
+        # path (ADR-0008 §6 — under ``--debug``, tracebacks render via
+        # Rich). Plain logfmt records take the soft-wrap fast path so
+        # NFR-10's "one entry per line" contract holds even when the
+        # formatted record exceeds the terminal width.
+        if record.exc_info:
+            super().emit(record)
+            return
         try:
             message = self.format(record)
             self.console.print(message, soft_wrap=True, markup=False, highlight=False)

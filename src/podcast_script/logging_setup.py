@@ -100,6 +100,40 @@ def _format_value(value: object) -> str:
     return f'"{escaped}"'
 
 
+class _SoftWrapRichHandler(RichHandler):
+    """RichHandler variant that emits each record without word-wrapping.
+
+    The default :class:`RichHandler` renders log records via
+    ``Console.print(...)``, which word-wraps at the console's width
+    (~80 cols on a TTY, narrower on a pipe). A logfmt line carrying
+    seven keys (UC-1 step 10's ``event=done`` summary) easily exceeds
+    that and gets split across two stderr lines, breaking NFR-10's
+    "one logfmt entry per line" contract that shell wrappers depend
+    on. Overriding :meth:`emit` to pass ``soft_wrap=True`` to
+    ``console.print`` keeps each formatted record on a single line
+    without forcing a console width that would also pad output with
+    spaces (`width=10**6` causes that exact bug).
+    """
+
+    def emit(self, record: logging.LogRecord) -> None:
+        # Records carrying ``exc_info`` keep the parent's rich-traceback
+        # path (ADR-0008 §6 — under ``--debug``, tracebacks render via
+        # Rich). Plain logfmt records take the soft-wrap fast path so
+        # NFR-10's "one entry per line" contract holds even when the
+        # formatted record exceeds the terminal width.
+        if record.exc_info:
+            super().emit(record)
+            return
+        try:
+            message = self.format(record)
+            self.console.print(message, soft_wrap=True, markup=False, highlight=False)
+        except Exception:
+            # Match logging.Handler.emit semantics — never let a formatting
+            # error crash the calling code; route it to the handler's
+            # configured error stream instead.
+            self.handleError(record)
+
+
 def configure(verbosity: Verbosity, progress: Progress | None) -> logging.Logger:
     """Wire the ``podcast_script`` logger per ADR-0008.
 
@@ -107,7 +141,7 @@ def configure(verbosity: Verbosity, progress: Progress | None) -> logging.Logger
     idempotent — re-calling it replaces handlers rather than stacking them.
     """
     console = progress.console if progress is not None else Console(stderr=True)
-    handler = RichHandler(
+    handler = _SoftWrapRichHandler(
         console=console,
         show_time=False,
         show_level=False,

@@ -16,6 +16,14 @@ from typer.testing import CliRunner
 from podcast_script import config as config_module
 from podcast_script.cli import SUPPORTED_LANGS, app, validate_lang
 from podcast_script.errors import UsageError
+from podcast_script.pipeline import RunSummary
+
+# Default stub for tests that don't care about ``RunSummary`` fields —
+# ``_run_pipeline`` is annotated ``-> RunSummary`` (non-Optional), so
+# stubs must honour the contract. ``duration_in_s=0.0`` keeps the
+# downstream ``event=done`` line well-formed without leaking pipeline
+# internals into the test.
+_RUN_SUMMARY_STUB = RunSummary(duration_in_s=0.0)
 
 
 @pytest.fixture(autouse=True)
@@ -175,7 +183,7 @@ class TestCliGrammarSurface:
         # exercise the actual behaviour.
         from podcast_script import cli as cli_module
 
-        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: None)
+        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: _RUN_SUMMARY_STUB)
 
         input_file = _touch(tmp_path, "episode.mp3")
         output_file = input_file.with_suffix(".md")
@@ -240,7 +248,7 @@ class TestCliGrammarSurface:
     ) -> None:
         from podcast_script import cli as cli_module
 
-        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: None)
+        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: _RUN_SUMMARY_STUB)
 
         input_file = _touch(tmp_path, "episode.mp3")
         result = runner.invoke(
@@ -336,7 +344,7 @@ class TestOutputExistsCheck:
         # avoids the exit-6 refusal — pipeline is stubbed.
         from podcast_script import cli as cli_module
 
-        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: None)
+        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: _RUN_SUMMARY_STUB)
 
         input_file = _touch(tmp_path, "episode.mp3")
         output_file = tmp_path / "episode.md"
@@ -355,11 +363,14 @@ class TestOutputExistsCheck:
         from podcast_script import cli as cli_module
 
         called: list[Path] = []
-        monkeypatch.setattr(
-            cli_module,
-            "_run_pipeline",
-            lambda **kw: called.append(kw["output_path"]),
-        )
+
+        def _record(**kw: object) -> RunSummary:
+            output_path = kw["output_path"]
+            assert isinstance(output_path, Path)
+            called.append(output_path)
+            return _RUN_SUMMARY_STUB
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", _record)
 
         input_file = _touch(tmp_path, "episode.mp3")
         result = runner.invoke(app, [str(input_file), "--lang", "es"])
@@ -447,10 +458,11 @@ class TestForceOverwrite:
 
         fresh = "# fresh transcript\n\nbody from this run\n"
 
-        def fake_run_pipeline(**kwargs: object) -> None:
+        def fake_run_pipeline(**kwargs: object) -> RunSummary:
             output_path = kwargs["output_path"]
             assert isinstance(output_path, Path)
             atomic_module.atomic_write(output_path, fresh)
+            return _RUN_SUMMARY_STUB
 
         monkeypatch.setattr(cli_module, "_run_pipeline", fake_run_pipeline)
 
@@ -475,10 +487,11 @@ class TestForceOverwrite:
 
         fresh = "# fresh\n"
 
-        def fake_run_pipeline(**kwargs: object) -> None:
+        def fake_run_pipeline(**kwargs: object) -> RunSummary:
             output_path = kwargs["output_path"]
             assert isinstance(output_path, Path)
             atomic_module.atomic_write(output_path, fresh)
+            return _RUN_SUMMARY_STUB
 
         monkeypatch.setattr(cli_module, "_run_pipeline", fake_run_pipeline)
 
@@ -505,8 +518,9 @@ class TestForceOverwrite:
 
         seen: dict[str, object] = {}
 
-        def fake_run_pipeline(**kwargs: object) -> None:
+        def fake_run_pipeline(**kwargs: object) -> RunSummary:
             seen.update(kwargs)
+            return _RUN_SUMMARY_STUB
 
         monkeypatch.setattr(cli_module, "_run_pipeline", fake_run_pipeline)
 
@@ -530,7 +544,7 @@ class TestForceOverwrite:
         from podcast_script import cli as cli_module
         from podcast_script.errors import DecodeError
 
-        def fake_run_pipeline(**_kwargs: object) -> None:
+        def fake_run_pipeline(**_kwargs: object) -> RunSummary:
             raise DecodeError("ffmpeg returned nonzero exit (synthetic for AC-US-6.3)")
 
         monkeypatch.setattr(cli_module, "_run_pipeline", fake_run_pipeline)
@@ -581,8 +595,9 @@ class TestCliConfigMerge:
 
         seen: dict[str, object] = {}
 
-        def fake_run_pipeline(**kwargs: object) -> None:
+        def fake_run_pipeline(**kwargs: object) -> RunSummary:
             seen.update(kwargs)
+            return _RUN_SUMMARY_STUB
 
         monkeypatch.setattr(cli_module, "_run_pipeline", fake_run_pipeline)
 
@@ -608,7 +623,12 @@ class TestCliConfigMerge:
         monkeypatch.setattr(config_module, "DEFAULT_CONFIG_PATH", config_path)
 
         seen: dict[str, object] = {}
-        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **kw: seen.update(kw))
+
+        def _capture(**kw: object) -> RunSummary:
+            seen.update(kw)
+            return _RUN_SUMMARY_STUB
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", _capture)
 
         input_file = _touch(tmp_path, "episode.mp3")
         result = runner.invoke(app, [str(input_file), "--lang", "en", "--model", "tiny"])
@@ -642,3 +662,175 @@ class TestCliConfigMerge:
         # a future refactor that bypasses ``validate_lang`` for the TOML
         # path can't pass this test silently.
         assert "did you mean `ca`" in result.stderr
+
+
+class TestEventCatalogue:
+    """POD-015 — ADR-0012 event catalogue freeze.
+
+    The catalogue is the implicit grep contract for shell scripts wrapping
+    the tool (SRS Risk #9). These tests lock the four lifecycle tokens
+    that depend on cli orchestration; the phase-boundary tokens are
+    covered by ``tests/test_pipeline.py``.
+    """
+
+    def _events_in(self, stderr: str) -> list[str]:
+        """Pull the ``event=<token>`` value from each logfmt line."""
+        out: list[str] = []
+        for line in stderr.splitlines():
+            for chunk in line.split():
+                if chunk.startswith("event="):
+                    out.append(chunk.removeprefix("event="))
+                    break
+        return out
+
+    def test_startup_event_fires_first(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """ADR-0012 lifecycle — ``event=startup`` is the first event
+        emitted (argv parsed, before any work)."""
+        from podcast_script import cli as cli_module
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: _RUN_SUMMARY_STUB)
+        input_file = _touch(tmp_path, "episode.mp3")
+
+        result = runner.invoke(app, [str(input_file), "--lang", "es"])
+
+        assert result.exit_code == 0, f"stderr={result.stderr!r}"
+        events = self._events_in(result.stderr)
+        assert events, f"no events emitted; stderr={result.stderr!r}"
+        assert events[0] == "startup", f"events={events!r}"
+
+    def test_config_loaded_event_fires_after_merge(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """ADR-0012 lifecycle — ``event=config_loaded`` fires after the
+        cli + TOML merge (AC-US-4.1/4.2 path) succeeds."""
+        from podcast_script import cli as cli_module
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: _RUN_SUMMARY_STUB)
+        input_file = _touch(tmp_path, "episode.mp3")
+
+        result = runner.invoke(app, [str(input_file), "--lang", "es"])
+
+        events = self._events_in(result.stderr)
+        assert "config_loaded" in events
+        # config_loaded comes after startup, before any pipeline event.
+        assert events.index("config_loaded") > events.index("startup")
+
+    def test_backend_selected_carries_required_keys(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """ADR-0012 lifecycle — ``event=backend_selected`` carries keys
+        ``backend=…`` ``device=…`` ``platform=…`` per the catalogue.
+        Stub the actual pipeline run so the test stays Tier 1; the
+        decision-point logging happens in cli, not in pipeline.
+        """
+        from podcast_script import cli as cli_module
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: _RUN_SUMMARY_STUB)
+        input_file = _touch(tmp_path, "episode.mp3")
+
+        result = runner.invoke(
+            app,
+            [str(input_file), "--lang", "es", "--backend", "faster-whisper"],
+        )
+
+        assert result.exit_code == 0, f"stderr={result.stderr!r}"
+        # The single backend_selected line must contain all three keys.
+        backend_line = next(
+            line for line in result.stderr.splitlines() if "event=backend_selected" in line
+        )
+        assert "backend=faster-whisper" in backend_line, f"line={backend_line!r}"
+        assert "device=" in backend_line, f"line={backend_line!r}"
+        assert "platform=" in backend_line, f"line={backend_line!r}"
+
+    def test_done_summary_carries_locked_shape(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """SRS UC-1 step 10 / ADR-0012 — ``event=done`` is the
+        terminal summary line. Locked shape: ``level=info event=done
+        input=… output=… backend=… model=… lang=… duration_in_s=…
+        duration_wall_s=…``.
+
+        We stub ``_run_pipeline`` to a fake that reports a fixed
+        ``duration_in_s`` so the test runs Tier 1 without touching the
+        real pipeline. The cli must thread that value into the done
+        line + measure ``duration_wall_s`` itself.
+        """
+        from podcast_script import cli as cli_module
+
+        def fake_run(**_kwargs: object) -> RunSummary:
+            return RunSummary(duration_in_s=42.5)
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", fake_run)
+        input_file = _touch(tmp_path, "episode.mp3")
+
+        result = runner.invoke(
+            app,
+            [
+                str(input_file),
+                "--lang",
+                "es",
+                "--model",
+                "tiny",
+                "--backend",
+                "faster-whisper",
+            ],
+        )
+
+        assert result.exit_code == 0, f"stderr={result.stderr!r}"
+        events = self._events_in(result.stderr)
+        assert events[-1] == "done", f"events={events!r}"
+
+        done_line = next(line for line in result.stderr.splitlines() if "event=done" in line)
+        # All seven UC-1 step 10 keys must appear in the locked summary.
+        for key in (
+            "input=",
+            "output=",
+            "backend=faster-whisper",
+            "model=tiny",
+            "lang=es",
+            "duration_in_s=42.500",
+            "duration_wall_s=",
+        ):
+            assert key in done_line, f"missing {key!r}; line={done_line!r}"
+
+    def test_full_lifecycle_event_order_at_default_verbosity(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """ADR-0012 catalogue regression net — emits the four lifecycle
+        tokens in canonical order, no others between them. Drift-detector
+        for the next time someone adds a token to the catalogue without
+        updating the ADR.
+        """
+        from podcast_script import cli as cli_module
+
+        def fake_run(**_kwargs: object) -> RunSummary:
+            return RunSummary(duration_in_s=1.0)
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", fake_run)
+        input_file = _touch(tmp_path, "episode.mp3")
+
+        result = runner.invoke(app, [str(input_file), "--lang", "es"])
+
+        assert result.exit_code == 0, f"stderr={result.stderr!r}"
+        # With the pipeline stubbed, only the cli-owned events fire.
+        events = self._events_in(result.stderr)
+        assert events == ["startup", "config_loaded", "backend_selected", "done"], (
+            f"unexpected event order; got {events!r}"
+        )

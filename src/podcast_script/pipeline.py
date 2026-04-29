@@ -47,6 +47,22 @@ Pipeline owns the choice (ADR-0002 §Context); the renderer applies it."""
 _log = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True, slots=True)
+class RunSummary:
+    """Data the cli needs after a successful run to emit ``event=done``.
+
+    Per SRS UC-1 step 10 / ADR-0012 the locked summary line carries
+    ``input``, ``output``, ``backend``, ``model``, ``lang``,
+    ``duration_in_s`` and ``duration_wall_s``. The cli already knows
+    every other field; only ``duration_in_s`` (the audio duration the
+    decoder measured) is computed inside the pipeline. Returning it as
+    a small frozen dataclass keeps the surface honest about who owns
+    which key without smuggling state through a global.
+    """
+
+    duration_in_s: float
+
+
 @dataclass
 class Pipeline:
     """Orchestrates one transcribe run.
@@ -65,11 +81,13 @@ class Pipeline:
     lang: str
     sample_rate: int = 16_000
 
-    def run(self, *, input_path: Path, output_path: Path) -> None:
+    def run(self, *, input_path: Path, output_path: Path) -> RunSummary:
         """Run the full pipeline; write Markdown atomically to ``output_path``.
 
-        Raises :class:`~podcast_script.errors.PodcastScriptError` subclasses
-        on stage failures (the cli translates these to exit codes). On any
+        Returns a :class:`RunSummary` carrying ``duration_in_s`` for the
+        cli's ``event=done`` summary (UC-1 step 10). Raises
+        :class:`~podcast_script.errors.PodcastScriptError` subclasses on
+        stage failures (the cli translates these to exit codes). On any
         failure before :func:`atomic_write` succeeds, ``output_path`` is
         guaranteed untouched per ADR-0005.
         """
@@ -80,6 +98,7 @@ class Pipeline:
         transcripts = self._transcribe_speech(pcm, segments)
         markdown = self._render(segments, transcripts, fmt)
         self._write(output_path, markdown)
+        return RunSummary(duration_in_s=len(pcm) / self.sample_rate)
 
     def _load_backend(self) -> None:
         """ADR-0009: eager ``backend.load`` before decode."""

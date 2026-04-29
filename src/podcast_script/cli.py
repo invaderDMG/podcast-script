@@ -29,17 +29,23 @@ the heavy ML deps.
 
 from __future__ import annotations
 
+import platform
+import sys
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
 import typer
 
 from . import config as _config
+from .backends.base import select_backend
 from .config import SUPPORTED_LANGS, validate_lang
 from .errors import InputIOError, OutputExistsError, PodcastScriptError
 from .logging_setup import configure
+from .pipeline import RunSummary
 
 if TYPE_CHECKING:
+    from .backends.base import WhisperBackend
     from .logging_setup import Verbosity
 
 # Re-exported so existing imports (``from podcast_script.cli import
@@ -119,31 +125,46 @@ def _resolve_verbosity(verbose: bool, quiet: bool, debug: bool) -> Verbosity:
     return "normal"
 
 
+def _platform_tag() -> str:
+    """Concise platform identifier for the ``event=backend_selected`` line.
+
+    Format: ``<machine>-<sys.platform>`` (``arm64-darwin``,
+    ``x86_64-linux``, …) — same convention as the E7 error in
+    :func:`~podcast_script.backends.base.select_backend`, the SRS UC-1
+    step 4 platform-detection rule, and ADR-0003. Once v1.0 ships, the
+    value of this token is part of the implicit grep contract (Risk
+    #9), so the surface stays consistent across error path + success
+    path.
+    """
+    return f"{platform.machine()}-{sys.platform}"
+
+
 def _run_pipeline(
     *,
     input_path: Path,
     output_path: Path,
     lang: str,
     model: str,
-    backend: str,
+    backend_instance: WhisperBackend,
     device: str,
     force: bool,
     debug: bool,
-) -> None:
-    """Compose the pipeline and run it.
+) -> RunSummary:
+    """Compose the pipeline and run it; return the cli-summary payload.
 
     The cli is the composition root (ADR-0002 §Decision step 4) — it
     instantiates the concrete stages and hands them to :class:`Pipeline`.
-    POD-017 plugs the real :class:`WhisperBackend` (faster-whisper or
-    mlx-whisper) in via :func:`~podcast_script.backends.base.select_backend`,
-    replacing the stub used during SP-1/SP-2. ``--force`` / ``--debug``
-    wiring is plumbed but their pipeline-level effects (atomic-rename
-    invariant; debug-artifact dir) live in POD-009 / POD-024 — the cli
-    just hands them through.
+    The ``backend_instance`` is resolved by ``main()`` via
+    :func:`~podcast_script.backends.base.select_backend` so the
+    ``event=backend_selected`` lifecycle event (ADR-0012) can fire
+    *before* this function is called — that way the line surfaces even
+    when tests stub ``_run_pipeline`` to a no-op. ``--force`` /
+    ``--debug`` wiring is plumbed but their pipeline-level effects
+    (atomic-rename invariant; debug-artifact dir) live in POD-009 /
+    POD-024 — the cli just hands them through.
     """
     del force, debug
 
-    from .backends.base import select_backend
     from .decode import decode as decode_audio
     from .pipeline import Pipeline
     from .render import render
@@ -152,13 +173,13 @@ def _run_pipeline(
     pipeline = Pipeline(
         decode=decode_audio,
         segmenter=InaSpeechSegmenter(),
-        backend=select_backend(backend=backend, device=device),
+        backend=backend_instance,
         render=render,
         model=model,
         device=device,
         lang=lang,
     )
-    pipeline.run(input_path=input_path, output_path=output_path)
+    return pipeline.run(input_path=input_path, output_path=output_path)
 
 
 @app.command(epilog=_EXIT_CODE_EPILOG)
@@ -225,6 +246,13 @@ def main(
     verbosity = _resolve_verbosity(verbose, quiet, debug)
     log = configure(verbosity, progress=None)
 
+    # ADR-0012 lifecycle — ``event=startup`` fires once argv has been
+    # parsed by typer and before any work begins. Lets shell wrappers
+    # see "tool started" before model load (which can take seconds on a
+    # cold cache).
+    log.info("", extra={"event": "startup"})
+    wall_start = time.monotonic()
+
     try:
         # POD-016 — load TOML defaults from the locked path (None = absent)
         # then merge with whatever the user typed on argv. ``cli_overrides``
@@ -245,17 +273,59 @@ def main(
         }
         cfg = _config.merge(toml_defaults=toml_defaults, cli_overrides=cli_overrides)
 
+        # ADR-0012 lifecycle — ``event=config_loaded`` fires after the
+        # CLI + TOML merge resolves to a validated Config. Order matters:
+        # ``startup`` → ``config_loaded`` → ``backend_selected`` →
+        # (pipeline events) → ``done``.
+        log.info("", extra={"event": "config_loaded"})
+
+        # ADR-0012 lifecycle — ``event=backend_selected`` fires *before*
+        # any heavy lib touches; the platform-detection rule (ADR-0003,
+        # UC-1 E7) lives in ``select_backend``. Resolving the backend
+        # here (not inside ``_run_pipeline``) lets the event surface
+        # under any test that stubs ``_run_pipeline``.
+        backend_instance = select_backend(backend=cfg.backend, device=cfg.device)
+        log.info(
+            "",
+            extra={
+                "event": "backend_selected",
+                "backend": backend_instance.name,
+                "device": cfg.device,
+                "platform": _platform_tag(),
+            },
+        )
+
         resolved_output = cfg.output if cfg.output is not None else cfg.input.with_suffix(".md")
         _check_output_path(resolved_output, force=cfg.force)
-        _run_pipeline(
+        summary = _run_pipeline(
             input_path=cfg.input,
             output_path=resolved_output,
             lang=cfg.lang,
             model=cfg.model,
-            backend=cfg.backend,
+            backend_instance=backend_instance,
             device=cfg.device,
             force=cfg.force,
             debug=debug,
+        )
+
+        # SRS UC-1 step 10 — locked logfmt summary line.
+        # Shape: ``level=info event=done input=<path> output=<path>
+        # backend=<name> model=<name> lang=<code> duration_in_s=<n>
+        # duration_wall_s=<n>``. Order is preserved by
+        # :class:`~podcast_script.logging_setup.LogfmtFormatter` (insertion
+        # order). Treated as part of the v1.0 grep contract per Risk #9.
+        log.info(
+            "",
+            extra={
+                "event": "done",
+                "input": str(cfg.input),
+                "output": str(resolved_output),
+                "backend": backend_instance.name,
+                "model": cfg.model,
+                "lang": cfg.lang,
+                "duration_in_s": f"{summary.duration_in_s:.3f}",
+                "duration_wall_s": f"{time.monotonic() - wall_start:.3f}",
+            },
         )
     except PodcastScriptError as exc:
         log.error("", extra={"event": exc.event, "code": exc.exit_code, "cause": str(exc)})

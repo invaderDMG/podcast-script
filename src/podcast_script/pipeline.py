@@ -278,9 +278,7 @@ class Pipeline:
         """
         assert self.debug_dir is not None
         self.debug_dir.mkdir(parents=True, exist_ok=True)
-        (self.debug_dir / "segments.jsonl").write_text(
-            to_jsonl(segments), encoding="utf-8"
-        )
+        (self.debug_dir / "segments.jsonl").write_text(to_jsonl(segments), encoding="utf-8")
 
     def _write_transcribe_jsonl(self, transcripts: list[TranscribedSegment]) -> None:
         """Persist ``transcribe.jsonl`` (one JSON object per
@@ -293,8 +291,7 @@ class Pipeline:
         assert self.debug_dir is not None
         self.debug_dir.mkdir(parents=True, exist_ok=True)
         lines = [
-            json.dumps({"start": ts.start, "end": ts.end, "text": ts.text})
-            for ts in transcripts
+            json.dumps({"start": ts.start, "end": ts.end, "text": ts.text}) for ts in transcripts
         ]
         body = "\n".join(lines) + "\n" if lines else ""
         (self.debug_dir / "transcribe.jsonl").write_text(body, encoding="utf-8")

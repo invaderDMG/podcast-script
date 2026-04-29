@@ -604,6 +604,4 @@ def test_pipeline_does_not_create_debug_dir_when_disabled_AC_US_7_2(tmp_path: Pa
     pipeline.run(input_path=input_path, output_path=output_path)
 
     debug_dir = tmp_path / "episode.debug"
-    assert not debug_dir.exists(), (
-        "AC-US-7.2 violation: debug dir created without explicit opt-in"
-    )
+    assert not debug_dir.exists(), "AC-US-7.2 violation: debug dir created without explicit opt-in"

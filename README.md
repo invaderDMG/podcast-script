@@ -303,17 +303,19 @@ SRS §16.1).
 The full ADR is at
 [`docs/adr/0012-event-catalogue-freeze.md`](docs/adr/0012-event-catalogue-freeze.md).
 
-### Verbosity matrix (AC-US-3.5)
+## Verbosity matrix (AC-US-3.5)
 
 | Flag | Logger level | Progress bar | Notes |
 |------|--------------|--------------|-------|
 | `-q` / `--quiet` | `ERROR` | Suppressed | No `event=*` info lines on the happy path; only error lines if any |
-| _(default)_ | `INFO` | On (TTY) / off (non-TTY) | The "normal" surface |
-| `-v` / `--verbose` | `DEBUG` | On (TTY) / off (non-TTY) | Reserved — no debug-level events emitted in v1.0 |
-| `--debug` | `DEBUG` | On (TTY) / off (non-TTY) | Same as `-v` plus the artifact directory of US-7 |
+| _(default)_ | `INFO` | Live region (TTY) / plain logfmt per-phase (non-TTY) | The "normal" surface |
+| `-v` / `--verbose` | `DEBUG` | Live region (TTY) / plain logfmt per-phase (non-TTY) | Reserved — no debug-level events emitted in v1.0 |
+| `--debug` | `DEBUG` | Live region (TTY) / plain logfmt per-phase (non-TTY) | Same as `-v` plus the artifact directory of US-7 |
 
 The three flags are mutually exclusive (SRS §9.1 `[-v | -q | --debug]`);
-combining any two exits 2.
+combining any two exits 2. On a non-TTY stderr (pipes, CI captures)
+the bar is replaced by the logfmt event stream — same information,
+no ANSI control sequences (AC-US-3.2).
 
 ## Observed throughput (no v1 SLA)
 
@@ -333,11 +335,20 @@ output of `uname -a` — see Risk #7 in the project plan.
 
 ## Development
 
-The project follows a tier-3 test pyramid (ADR-0017):
+The project follows a three-tier test strategy (ADR-0017):
+
+- **Tier 1 — unit + fakes.** Pure logic exercised against in-memory
+  fakes; sub-second total. Default `pytest` invocation.
+- **Tier 2 — contract.** `WhisperBackend` Protocol invariants run
+  against both `FakeBackend` AND the real backends (POD-030, in
+  progress). Run alongside Tier 1 when present.
+- **Tier 3 — integration.** Full CLI on `examples/sample.mp3` with
+  the real `faster-whisper` `tiny` model. Marked `pytest.mark.slow`
+  so the unit tier stays sub-second.
 
 ```sh
-uv run pytest                     # tier 1 (unit + fakes), default
-uv run pytest -m slow             # tier 3 (real CLI on examples/sample.mp3)
+uv run pytest                     # Tier 1 (+ Tier 2 when present), default
+uv run pytest -m slow             # Tier 3 (real CLI on examples/sample.mp3)
 uv run pytest -m "slow or not slow"   # everything (CI does this)
 
 uv run ruff check .               # lint
@@ -357,7 +368,8 @@ The architecture lives in
 
 ## License
 
-MIT — see `pyproject.toml` for the canonical declaration.
+MIT — see [`LICENSE`](LICENSE) for the full text. Declared canonically
+via `[project] license = "MIT"` in `pyproject.toml`.
 
 ## Acknowledgements
 

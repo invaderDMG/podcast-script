@@ -966,3 +966,102 @@ class TestVerbosityMatrix:
         # …but the logfmt events still fire, so the user has the
         # plain-text per-phase update AC-US-3.2 promises.
         assert "level=info" in result.stderr
+
+
+class TestDebugArtifactDir:
+    """POD-024 — ``--debug`` writes ``<input-stem>.debug/`` next to the
+    input. AC-US-7.1 (artifact contents) is locked by Tier 1 pipeline
+    tests; here we lock the cli wiring — when ``--debug`` is set, the
+    cli passes a ``debug_dir`` to ``_run_pipeline``, and the path
+    follows the SRS naming convention.
+    """
+
+    def test_debug_flag_passes_debug_dir_to_run_pipeline(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """When ``--debug`` is set, the cli computes
+        ``debug_dir = <input.parent>/<input.stem>.debug`` and threads
+        it into ``_run_pipeline``.
+        """
+        from podcast_script import cli as cli_module
+
+        seen: dict[str, object] = {}
+
+        def fake_run_pipeline(**kwargs: object) -> RunSummary:
+            seen.update(kwargs)
+            return _RUN_SUMMARY_STUB
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", fake_run_pipeline)
+
+        input_file = _touch(tmp_path, "episode.mp3")
+        result = runner.invoke(app, [str(input_file), "--lang", "es", "--debug"])
+
+        assert result.exit_code == 0, f"stderr={result.stderr!r}"
+        # Naming convention: ``<stem>.debug`` next to the input.
+        assert seen.get("debug_dir") == tmp_path / "episode.debug"
+
+    def test_no_debug_flag_passes_none_AC_US_7_2(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """AC-US-7.2 — default invocation passes ``debug_dir=None``;
+        downstream the pipeline's gated writes leave the filesystem
+        untouched.
+        """
+        from podcast_script import cli as cli_module
+
+        seen: dict[str, object] = {}
+
+        def fake_run_pipeline(**kwargs: object) -> RunSummary:
+            seen.update(kwargs)
+            return _RUN_SUMMARY_STUB
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", fake_run_pipeline)
+
+        input_file = _touch(tmp_path, "episode.mp3")
+        result = runner.invoke(app, [str(input_file), "--lang", "es"])
+
+        assert result.exit_code == 0, f"stderr={result.stderr!r}"
+        assert seen.get("debug_dir") is None
+        # Belt-and-braces — no sibling ``.debug`` dir was created
+        # incidentally.
+        assert not (tmp_path / "episode.debug").exists()
+
+    def test_no_debug_run_leaves_no_tmp_leftovers_AC_US_7_2(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """AC-US-7.2 — without ``--debug``, no temp files survive the run.
+
+        ADR-0005's atomic-write helper produces ``.tmp`` siblings during
+        the rename window; this test pretends the pipeline ran (writes
+        the output via the same atomic helper) and asserts no debris
+        remains. Real-pipeline temp leftovers (segmenter's WAV scratch
+        file) are covered by ``test_integration_tiny.py``.
+        """
+        from podcast_script import atomic_write as atomic_module
+        from podcast_script import cli as cli_module
+
+        def fake_run_pipeline(**kwargs: object) -> RunSummary:
+            output_path = kwargs["output_path"]
+            assert isinstance(output_path, Path)
+            atomic_module.atomic_write(output_path, "# fresh\n")
+            return _RUN_SUMMARY_STUB
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", fake_run_pipeline)
+
+        input_file = _touch(tmp_path, "episode.mp3")
+        result = runner.invoke(app, [str(input_file), "--lang", "es"])
+
+        assert result.exit_code == 0, f"stderr={result.stderr!r}"
+        # No debug dir, no .tmp / .md.tmp debris next to the input.
+        assert not (tmp_path / "episode.debug").exists()
+        assert list(tmp_path.glob("*.tmp")) == []
+        assert list(tmp_path.glob("*.md.tmp")) == []

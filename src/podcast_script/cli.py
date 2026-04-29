@@ -168,7 +168,7 @@ def _run_pipeline(
     device: str,
     progress: Progress | None,
     force: bool,
-    debug: bool,
+    debug_dir: Path | None,
 ) -> RunSummary:
     """Compose the pipeline and run it; return the cli-summary payload.
 
@@ -178,20 +178,31 @@ def _run_pipeline(
     (via :func:`~podcast_script.progress.make_progress`) are resolved
     by ``main()`` so their lifecycle events (``backend_selected``) and
     log-handler-Console binding (ADR-0008) can be set up before the
-    pipeline runs. ``--force`` / ``--debug`` wiring is plumbed but
-    their pipeline-level effects (atomic-rename invariant;
-    debug-artifact dir) live in POD-009 / POD-024 — the cli just hands
-    them through.
+    pipeline runs.
+
+    POD-024 — when ``debug_dir`` is set we bind it into the ``decode``
+    callable via :func:`functools.partial` so ``decode()`` writes
+    ``commands.txt`` automatically (see :mod:`.decode`); the pipeline
+    side handles the other three artifacts (decoded.wav,
+    segments.jsonl, transcribe.jsonl) per AC-US-7.1.
     """
-    del force, debug
+    import functools
+
+    del force
 
     from .decode import decode as decode_audio
     from .pipeline import Pipeline
     from .render import render
     from .segment import InaSpeechSegmenter
 
+    decode_fn = (
+        functools.partial(decode_audio, debug_dir=debug_dir)
+        if debug_dir is not None
+        else decode_audio
+    )
+
     pipeline = Pipeline(
-        decode=decode_audio,
+        decode=decode_fn,
         segmenter=InaSpeechSegmenter(),
         backend=backend_instance,
         render=render,
@@ -199,6 +210,7 @@ def _run_pipeline(
         device=device,
         lang=lang,
         progress=progress,
+        debug_dir=debug_dir,
     )
     return pipeline.run(input_path=input_path, output_path=output_path)
 
@@ -328,6 +340,13 @@ def main(
         resolved_output = cfg.output if cfg.output is not None else cfg.input.with_suffix(".md")
         _check_output_path(resolved_output, force=cfg.force)
 
+        # POD-024 — when ``--debug`` is set, the artifact directory
+        # lands at ``<input-stem>.debug/`` next to the input per
+        # AC-US-7.1. ADR-0015's refuse-without-``--force`` gate for
+        # this directory is POD-025's scope (SP-6 follow-up); for now
+        # the directory is created lazily on first artifact write.
+        debug_dir = cfg.input.parent / f"{cfg.input.stem}.debug" if debug else None
+
         # POD-013 — three-phase progress bar (decode / segment /
         # transcribe). Hoisted up here (not inside ``_run_pipeline``)
         # so we can re-configure the log handler to share the Progress
@@ -354,7 +373,7 @@ def main(
                 device=cfg.device,
                 progress=bar,
                 force=cfg.force,
-                debug=debug,
+                debug_dir=debug_dir,
             )
 
         # SRS UC-1 step 10 — locked logfmt summary line.

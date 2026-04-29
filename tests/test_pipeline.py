@@ -416,6 +416,8 @@ def test_pipeline_advances_each_phase_task_once_POD_013(tmp_path: Path) -> None:
         segments=segments,
     )
 
+    from unittest.mock import patch
+
     from podcast_script.progress import TaskID
 
     bar = make_progress()
@@ -426,10 +428,9 @@ def test_pipeline_advances_each_phase_task_once_POD_013(tmp_path: Path) -> None:
         advances.append((int(task_id), advance))
         real_advance(task_id, advance)
 
-    bar.advance = recording_advance  # type: ignore[method-assign]
     pipeline.progress = bar
-
-    pipeline.run(input_path=input_path, output_path=output_path)
+    with patch.object(bar, "advance", side_effect=recording_advance):
+        pipeline.run(input_path=input_path, output_path=output_path)
 
     decode_ticks = [a for a in advances if a[0] == DECODE_TASK]
     segment_ticks = [a for a in advances if a[0] == SEGMENT_TASK]

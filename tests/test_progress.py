@@ -10,8 +10,6 @@ from __future__ import annotations
 import io
 from typing import IO, cast
 
-import pytest
-
 from podcast_script import progress as progress_module
 from podcast_script.progress import (
     DECODE_TASK,
@@ -77,9 +75,7 @@ def test_make_progress_disabled_when_stderr_is_not_a_tty() -> None:
     assert pipe_stream.getvalue() == ""
 
 
-def test_make_progress_enabled_when_stderr_is_a_tty(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_make_progress_enabled_when_stderr_is_a_tty() -> None:
     """Inverse of the previous: a fake TTY-shaped stream gets a live
     bar. We don't render the bar here (transient, hard to assert),
     just verify it isn't disabled."""

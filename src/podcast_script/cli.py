@@ -29,6 +29,7 @@ the heavy ML deps.
 
 from __future__ import annotations
 
+import contextlib
 import platform
 import sys
 import time
@@ -148,7 +149,7 @@ def _run_pipeline(
     model: str,
     backend_instance: WhisperBackend,
     device: str,
-    progress: Progress,
+    progress: Progress | None,
     force: bool,
     debug: bool,
 ) -> RunSummary:
@@ -307,11 +308,17 @@ def main(
         # console per ADR-0008 — keeps progress + log lines from
         # tearing on a real TTY. ``make_progress`` honours AC-US-3.2
         # by disabling itself on non-TTY stderr so pipe / CI captures
-        # see no ANSI. The ``with`` block guarantees ``Progress.stop()``
-        # even if the pipeline raises.
-        bar = make_progress()
+        # see no ANSI.
+        #
+        # ``--quiet`` constructs no Progress at all per ADR-0008
+        # §Decision step 4 / AC-US-3.3 — POD-014 will lift this gate
+        # once the full verbosity matrix lands. The ``with`` block
+        # guarantees ``Progress.stop()`` even if the pipeline raises;
+        # ``nullcontext()`` keeps the call shape symmetric on the
+        # ``--quiet`` path.
+        bar = make_progress() if verbosity != "quiet" else None
         log = configure(verbosity, progress=bar)
-        with bar:
+        with bar if bar is not None else contextlib.nullcontext():
             summary = _run_pipeline(
                 input_path=cfg.input,
                 output_path=resolved_output,

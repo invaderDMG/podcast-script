@@ -966,3 +966,226 @@ class TestVerbosityMatrix:
         # …but the logfmt events still fire, so the user has the
         # plain-text per-phase update AC-US-3.2 promises.
         assert "level=info" in result.stderr
+
+
+class TestDebugArtifactDir:
+    """POD-024 — ``--debug`` writes ``<input-stem>.debug/`` next to the
+    input. AC-US-7.1 (artifact contents) is locked by Tier 1 pipeline
+    tests; here we lock the cli wiring — when ``--debug`` is set, the
+    cli passes a ``debug_dir`` to ``_run_pipeline``, and the path
+    follows the SRS naming convention.
+    """
+
+    def test_debug_flag_passes_debug_dir_to_run_pipeline(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """When ``--debug`` is set, the cli computes
+        ``debug_dir = <input.parent>/<input.stem>.debug`` and threads
+        it into ``_run_pipeline``.
+        """
+        from podcast_script import cli as cli_module
+
+        seen: dict[str, object] = {}
+
+        def fake_run_pipeline(**kwargs: object) -> RunSummary:
+            seen.update(kwargs)
+            return _RUN_SUMMARY_STUB
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", fake_run_pipeline)
+
+        input_file = _touch(tmp_path, "episode.mp3")
+        result = runner.invoke(app, [str(input_file), "--lang", "es", "--debug"])
+
+        assert result.exit_code == 0, f"stderr={result.stderr!r}"
+        # Naming convention: ``<stem>.debug`` next to the input.
+        assert seen.get("debug_dir") == tmp_path / "episode.debug"
+
+    def test_no_debug_flag_passes_none_AC_US_7_2(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """AC-US-7.2 — default invocation passes ``debug_dir=None``;
+        downstream the pipeline's gated writes leave the filesystem
+        untouched.
+        """
+        from podcast_script import cli as cli_module
+
+        seen: dict[str, object] = {}
+
+        def fake_run_pipeline(**kwargs: object) -> RunSummary:
+            seen.update(kwargs)
+            return _RUN_SUMMARY_STUB
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", fake_run_pipeline)
+
+        input_file = _touch(tmp_path, "episode.mp3")
+        result = runner.invoke(app, [str(input_file), "--lang", "es"])
+
+        assert result.exit_code == 0, f"stderr={result.stderr!r}"
+        assert seen.get("debug_dir") is None
+        # Belt-and-braces — no sibling ``.debug`` dir was created
+        # incidentally.
+        assert not (tmp_path / "episode.debug").exists()
+
+    def test_no_debug_run_leaves_no_tmp_leftovers_AC_US_7_2(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """AC-US-7.2 — without ``--debug``, no temp files survive the run.
+
+        ADR-0005's atomic-write helper produces ``.tmp`` siblings during
+        the rename window; this test pretends the pipeline ran (writes
+        the output via the same atomic helper) and asserts no debris
+        remains. Real-pipeline temp leftovers (segmenter's WAV scratch
+        file) are covered by ``test_integration_tiny.py``.
+        """
+        from podcast_script import atomic_write as atomic_module
+        from podcast_script import cli as cli_module
+
+        def fake_run_pipeline(**kwargs: object) -> RunSummary:
+            output_path = kwargs["output_path"]
+            assert isinstance(output_path, Path)
+            atomic_module.atomic_write(output_path, "# fresh\n")
+            return _RUN_SUMMARY_STUB
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", fake_run_pipeline)
+
+        input_file = _touch(tmp_path, "episode.mp3")
+        result = runner.invoke(app, [str(input_file), "--lang", "es"])
+
+        assert result.exit_code == 0, f"stderr={result.stderr!r}"
+        # No debug dir, no .tmp / .md.tmp debris next to the input.
+        assert not (tmp_path / "episode.debug").exists()
+        assert list(tmp_path.glob("*.tmp")) == []
+        assert list(tmp_path.glob("*.md.tmp")) == []
+
+    def test_run_pipeline_binds_debug_dir_into_decode_partial(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Locks the ``functools.partial(decode, debug_dir=…)`` seam in
+        ``cli._run_pipeline``. Without this binding, ``commands.txt``
+        would silently stop being written under ``--debug`` even
+        though the rest of the artifact dir is correct.
+
+        Patches the ``decode`` callable at its source module so the
+        ``from .decode import decode as decode_audio`` lookup inside
+        ``_run_pipeline`` picks up our recorder. Then aborts the
+        pipeline early so we don't have to stub the segmenter / backend
+        downstream — we only care about the partial-binding effect.
+        """
+        from podcast_script import cli as cli_module
+        from podcast_script import decode as decode_module
+        from podcast_script.errors import DecodeError
+
+        captured: list[Path | None] = []
+
+        def fake_decode(input_path: Path, *, debug_dir: Path | None = None) -> object:
+            del input_path
+            captured.append(debug_dir)
+            # Abort early — we just need to confirm the kwarg flowed.
+            raise DecodeError("synthetic — captured the partial")
+
+        monkeypatch.setattr(decode_module, "decode", fake_decode)
+
+        # Stub the segmenter import so InaSpeechSegmenter() doesn't
+        # construct the real (TF-loading) class. ``_run_pipeline`` uses
+        # ``from .segment import InaSpeechSegmenter``, so monkeypatching
+        # the source module is enough.
+        from podcast_script import segment as segment_module
+
+        class _StubSegmenter:
+            def segment(self, _pcm: object) -> list[object]:
+                return []
+
+        monkeypatch.setattr(segment_module, "InaSpeechSegmenter", _StubSegmenter)
+
+        class _StubBackend:
+            name = "stub"
+
+            def load(self, model: str, device: str) -> None:
+                del model, device
+
+            def transcribe(self, *_args: object, **_kwargs: object) -> list[object]:
+                return []
+
+        debug_dir = tmp_path / "episode.debug"
+        with pytest.raises(DecodeError):
+            cli_module._run_pipeline(
+                input_path=tmp_path / "episode.mp3",
+                output_path=tmp_path / "episode.md",
+                lang="es",
+                model="tiny",
+                backend_instance=_StubBackend(),  # type: ignore[arg-type]
+                device="cpu",
+                progress=None,
+                force=False,
+                debug_dir=debug_dir,
+            )
+
+        assert captured == [debug_dir]
+
+
+class TestDebugDirRefuseWithoutForce:
+    """POD-025 — ADR-0015 refuse-without-``--force`` for the debug dir.
+
+    Mirrors the US-6 output-Markdown gate: never silently destroys
+    prior debug artifacts. Reuses ``OutputExistsError`` (exit 6,
+    ``event=output_exists``) so the catalogue stays at 22 tokens
+    (ADR-0012).
+    """
+
+    def test_existing_debug_dir_without_force_exits_6(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """ADR-0015 — pre-existing ``<input-stem>.debug/`` + no ``-f`` →
+        ``OutputExistsError`` (exit 6) before any pipeline work begins.
+        """
+        input_file = _touch(tmp_path, "episode.mp3")
+        debug_dir = tmp_path / "episode.debug"
+        debug_dir.mkdir()
+        (debug_dir / "stale.txt").write_text("from a previous --debug run\n", encoding="utf-8")
+
+        result = runner.invoke(app, [str(input_file), "--lang", "es", "--debug"])
+
+        assert result.exit_code == 6, f"stderr={result.stderr!r}"
+        assert "event=output_exists" in result.stderr
+        assert "episode.debug" in result.stderr
+        # The prior artifact MUST survive — ADR-0015 §Decision step 2.
+        assert (debug_dir / "stale.txt").read_text(encoding="utf-8") == (
+            "from a previous --debug run\n"
+        )
+
+    def test_existing_debug_dir_with_force_clears_then_recreates(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """ADR-0015 §Decision step 3 — ``--debug --force`` rmtree's the
+        prior dir then creates a fresh one. Stale files from the
+        previous run MUST be gone.
+        """
+        from podcast_script import cli as cli_module
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: _RUN_SUMMARY_STUB)
+
+        input_file = _touch(tmp_path, "episode.mp3")
+        debug_dir = tmp_path / "episode.debug"
+        debug_dir.mkdir()
+        (debug_dir / "stale.txt").write_text("clobber me\n", encoding="utf-8")
+
+        result = runner.invoke(app, [str(input_file), "--lang", "es", "--debug", "--force"])
+
+        assert result.exit_code == 0, f"stderr={result.stderr!r}"
+        # Stale file gone (rmtree happened); the dir itself is back.
+        assert debug_dir.is_dir()
+        assert not (debug_dir / "stale.txt").exists()

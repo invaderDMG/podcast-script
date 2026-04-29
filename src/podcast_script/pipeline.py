@@ -21,20 +21,26 @@ that catalogue lands in POD-033 / POD-015).
 
 from __future__ import annotations
 
+import json
 import logging
 import time
+import wave
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import numpy.typing as npt
+
+if TYPE_CHECKING:
+    from typing import TextIO
 
 from .atomic_write import atomic_write
 from .backends.base import TranscribedSegment, WhisperBackend
 from .progress import DECODE_TASK, SEGMENT_TASK, TRANSCRIBE_TASK, Progress
 from .render import RenderFn, TimestampFormat
-from .segment import Segment, Segmenter
+from .segment import Segment, Segmenter, to_jsonl
 
 DecodeFn = Callable[[Path], npt.NDArray[np.float32]]
 """Callable signature the cli supplies to bind ``debug_dir`` and friends
@@ -46,6 +52,18 @@ _ONE_HOUR_S = 3600
 Pipeline owns the choice (ADR-0002 §Context); the renderer applies it."""
 
 _log = logging.getLogger(__name__)
+
+
+def _transcribed_to_json_line(ts: TranscribedSegment) -> str:
+    """Render one ``TranscribedSegment`` as the AC-US-7.1 JSON-Line.
+
+    Wire format: ``{"start": <s>, "end": <s>, "text": <str>}\\n`` —
+    paired with :func:`podcast_script.segment.to_jsonl` for segments;
+    kept as a free function (rather than a method on
+    :class:`TranscribedSegment`) so it stays close to the artifact-
+    write call site without polluting the data class.
+    """
+    return json.dumps({"start": ts.start, "end": ts.end, "text": ts.text}) + "\n"
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +104,12 @@ class Pipeline:
     # root has wired :func:`podcast_script.progress.make_progress` and the
     # phase methods tick it per ADR-0010.
     progress: Progress | None = None
+    # POD-024 — optional ``<input-stem>.debug/`` artifact directory.
+    # When set, each phase persists its output (decoded.wav / segments
+    # .jsonl / transcribe.jsonl); ``decode()`` writes commands.txt
+    # itself when the cli passes ``debug_dir`` through the partial.
+    # Default ``None`` = no artifacts (AC-US-7.2).
+    debug_dir: Path | None = None
 
     def run(self, *, input_path: Path, output_path: Path) -> RunSummary:
         """Run the full pipeline; write Markdown atomically to ``output_path``.
@@ -149,6 +173,8 @@ class Pipeline:
         )
         if self.progress is not None:
             self.progress.advance(DECODE_TASK, 1)
+        if self.debug_dir is not None:
+            self._write_decoded_wav(pcm)
         return pcm
 
     def _choose_fmt(self, pcm: npt.NDArray[np.float32]) -> TimestampFormat:
@@ -170,6 +196,8 @@ class Pipeline:
             # percentage becomes meaningful for the transcribe phase.
             n_speech = sum(1 for s in segments if s.label == "speech")
             self.progress.update(TRANSCRIBE_TASK, total=n_speech)
+        if self.debug_dir is not None:
+            self._write_segments_jsonl(segments)
         return segments
 
     def _transcribe_speech(
@@ -180,6 +208,14 @@ class Pipeline:
         """ADR-0004 streaming contract: one ``transcribe`` call per speech
         segment. Re-anchors backend offsets (relative to slice start) onto
         absolute episode time before handing to the renderer.
+
+        AC-US-7.1 says ``transcribe.jsonl`` exists after the run
+        completes "success or failure". We therefore stream each
+        re-anchored ``TranscribedSegment`` to the file as it is
+        produced and ``flush()`` after every line — a backend that
+        raises mid-loop leaves whatever was already transcribed on
+        disk for inspection. The ``try/finally`` block guarantees the
+        sink is closed even on exception propagation.
         """
         speech_segments = [s for s in segments if s.label == "speech"]
         _log.info(
@@ -190,23 +226,35 @@ class Pipeline:
             },
         )
         transcripts: list[TranscribedSegment] = []
-        for seg in speech_segments:
-            start_idx = int(seg.start * self.sample_rate)
-            end_idx = int(seg.end * self.sample_rate)
-            for ts in self.backend.transcribe(pcm[start_idx:end_idx], self.lang, self.sample_rate):
-                transcripts.append(
-                    TranscribedSegment(
+        sink: TextIO | None = None
+        if self.debug_dir is not None:
+            self.debug_dir.mkdir(parents=True, exist_ok=True)
+            sink = (self.debug_dir / "transcribe.jsonl").open("w", encoding="utf-8")
+        try:
+            for seg in speech_segments:
+                start_idx = int(seg.start * self.sample_rate)
+                end_idx = int(seg.end * self.sample_rate)
+                for ts in self.backend.transcribe(
+                    pcm[start_idx:end_idx], self.lang, self.sample_rate
+                ):
+                    anchored = TranscribedSegment(
                         start=seg.start + ts.start,
                         end=seg.start + ts.end,
                         text=ts.text,
                     )
-                )
-            # ADR-0010 — tick once per outer-loop iteration over speech
-            # segments. Backend-agnostic: faster-whisper yields incrementally
-            # while mlx-whisper may yield all results at once at the end of
-            # ``transcribe()``. The user sees the same UX on both.
-            if self.progress is not None:
-                self.progress.advance(TRANSCRIBE_TASK, 1)
+                    transcripts.append(anchored)
+                    if sink is not None:
+                        sink.write(_transcribed_to_json_line(anchored))
+                        sink.flush()
+                # ADR-0010 — tick once per outer-loop iteration over speech
+                # segments. Backend-agnostic: faster-whisper yields incrementally
+                # while mlx-whisper may yield all results at once at the end of
+                # ``transcribe()``. The user sees the same UX on both.
+                if self.progress is not None:
+                    self.progress.advance(TRANSCRIBE_TASK, 1)
+        finally:
+            if sink is not None:
+                sink.close()
         _log.info(
             "",
             extra={
@@ -230,3 +278,38 @@ class Pipeline:
         """Atomic temp+rename via :func:`atomic_write` (ADR-0005)."""
         atomic_write(output_path, markdown)
         _log.info("", extra={"event": "write_done", "output": str(output_path)})
+
+    # ------------------------------------------------------------------
+    # POD-024 — --debug artifact writes (AC-US-7.1)
+    # ------------------------------------------------------------------
+
+    def _write_decoded_wav(self, pcm: npt.NDArray[np.float32]) -> None:
+        """Persist ``decoded.wav`` (mono 16 kHz int16) to the debug dir.
+
+        ``decode()`` returns float32 PCM in [-1.0, 1.0] per ADR-0016;
+        we clip and scale to int16 for the WAV header convention. The
+        directory is created lazily so the cli doesn't have to mkdir
+        before the run starts. ADR-0013 forbids new runtime deps, so
+        we use stdlib :mod:`wave` (no soundfile / scipy).
+        """
+        assert self.debug_dir is not None  # narrowed by callers
+        self.debug_dir.mkdir(parents=True, exist_ok=True)
+
+        clipped = np.clip(pcm, -1.0, 1.0)
+        int16 = (clipped * 32767.0).astype(np.int16)
+        with wave.open(str(self.debug_dir / "decoded.wav"), "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(self.sample_rate)
+            w.writeframes(int16.tobytes())
+
+    def _write_segments_jsonl(self, segments: list[Segment]) -> None:
+        """Persist ``segments.jsonl`` (one JSON object per segment).
+
+        Format locked by AC-US-7.1: ``{start, end, label}``; reuses
+        :func:`podcast_script.segment.to_jsonl` so the segments-side
+        canonical wire format lives in one place.
+        """
+        assert self.debug_dir is not None
+        self.debug_dir.mkdir(parents=True, exist_ok=True)
+        (self.debug_dir / "segments.jsonl").write_text(to_jsonl(segments), encoding="utf-8")

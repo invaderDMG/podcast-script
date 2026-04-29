@@ -30,6 +30,7 @@ the heavy ML deps.
 from __future__ import annotations
 
 import contextlib
+import functools
 import platform
 import sys
 import time
@@ -111,6 +112,35 @@ def _check_output_path(resolved_output: Path, *, force: bool) -> None:
         )
 
 
+def _gate_debug_dir(debug_dir: Path, *, force: bool) -> None:
+    """ADR-0015 — refuse-without-``--force`` for the debug dir (POD-025).
+
+    Mirrors :func:`_check_output_path`'s US-6 behaviour for the output
+    Markdown so the user's mental model is single — ``--force`` is the
+    only opt-in that destroys prior work, regardless of which artifact
+    is on disk.
+
+    * If ``debug_dir`` does not exist → no-op; the lazy ``mkdir`` in
+      ``Pipeline._write_*`` handlers will create it on first write.
+    * If it exists and ``force`` is False → :class:`OutputExistsError`
+      (exit 6, ``event=output_exists``).
+    * If it exists and ``force`` is True → ``shutil.rmtree`` + recreate
+      so a partial run (e.g. one that died mid-transcribe) doesn't
+      leak stale files into the new run's artifacts.
+    """
+    import shutil
+
+    if not debug_dir.exists():
+        return
+    if not force:
+        raise OutputExistsError(
+            f"refusing to overwrite existing debug directory {debug_dir}; "
+            "pass --force / -f to opt in (or omit --debug)"
+        )
+    shutil.rmtree(debug_dir)
+    debug_dir.mkdir(parents=True)
+
+
 def _resolve_verbosity(verbose: bool, quiet: bool, debug: bool) -> Verbosity:
     """Map the three flag booleans to a :data:`Verbosity` label.
 
@@ -168,7 +198,7 @@ def _run_pipeline(
     device: str,
     progress: Progress | None,
     force: bool,
-    debug: bool,
+    debug_dir: Path | None,
 ) -> RunSummary:
     """Compose the pipeline and run it; return the cli-summary payload.
 
@@ -178,20 +208,29 @@ def _run_pipeline(
     (via :func:`~podcast_script.progress.make_progress`) are resolved
     by ``main()`` so their lifecycle events (``backend_selected``) and
     log-handler-Console binding (ADR-0008) can be set up before the
-    pipeline runs. ``--force`` / ``--debug`` wiring is plumbed but
-    their pipeline-level effects (atomic-rename invariant;
-    debug-artifact dir) live in POD-009 / POD-024 — the cli just hands
-    them through.
+    pipeline runs.
+
+    POD-024 — when ``debug_dir`` is set we bind it into the ``decode``
+    callable via :func:`functools.partial` so ``decode()`` writes
+    ``commands.txt`` automatically (see :mod:`.decode`); the pipeline
+    side handles the other three artifacts (decoded.wav,
+    segments.jsonl, transcribe.jsonl) per AC-US-7.1.
     """
-    del force, debug
+    del force
 
     from .decode import decode as decode_audio
     from .pipeline import Pipeline
     from .render import render
     from .segment import InaSpeechSegmenter
 
+    decode_fn = (
+        functools.partial(decode_audio, debug_dir=debug_dir)
+        if debug_dir is not None
+        else decode_audio
+    )
+
     pipeline = Pipeline(
-        decode=decode_audio,
+        decode=decode_fn,
         segmenter=InaSpeechSegmenter(),
         backend=backend_instance,
         render=render,
@@ -199,6 +238,7 @@ def _run_pipeline(
         device=device,
         lang=lang,
         progress=progress,
+        debug_dir=debug_dir,
     )
     return pipeline.run(input_path=input_path, output_path=output_path)
 
@@ -328,6 +368,19 @@ def main(
         resolved_output = cfg.output if cfg.output is not None else cfg.input.with_suffix(".md")
         _check_output_path(resolved_output, force=cfg.force)
 
+        # POD-024 — when ``--debug`` is set, the artifact directory
+        # lands at ``<input-stem>.debug/`` next to the input per
+        # AC-US-7.1.
+        # POD-025 / ADR-0015 — refuse-without-``--force`` gate. Mirrors
+        # US-6's output-Markdown rule: never silently destroys prior
+        # debug artifacts. Reuses ``OutputExistsError`` (exit 6,
+        # ``event=output_exists``) so the catalogue stays at 22 tokens
+        # (ADR-0012). With ``--force`` the prior dir is rmtree'd and
+        # the run proceeds against a fresh empty directory.
+        debug_dir = cfg.input.parent / f"{cfg.input.stem}.debug" if debug else None
+        if debug_dir is not None:
+            _gate_debug_dir(debug_dir, force=cfg.force)
+
         # POD-013 — three-phase progress bar (decode / segment /
         # transcribe). Hoisted up here (not inside ``_run_pipeline``)
         # so we can re-configure the log handler to share the Progress
@@ -354,7 +407,7 @@ def main(
                 device=cfg.device,
                 progress=bar,
                 force=cfg.force,
-                debug=debug,
+                debug_dir=debug_dir,
             )
 
         # SRS UC-1 step 10 — locked logfmt summary line.

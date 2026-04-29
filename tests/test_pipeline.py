@@ -493,3 +493,117 @@ def test_pipeline_works_without_progress_bar_POD_013(tmp_path: Path) -> None:
     pipeline.run(input_path=input_path, output_path=output_path)
 
     assert output_path.is_file()
+
+
+# ---------------------------------------------------------------------------
+# POD-024 — --debug artifact directory (AC-US-7.1 / AC-US-7.2)
+# ---------------------------------------------------------------------------
+
+
+def test_pipeline_writes_decoded_wav_to_debug_dir_POD_024(tmp_path: Path) -> None:
+    """AC-US-7.1 — ``decoded.wav`` (mono 16 kHz int16 PCM) lands in
+    ``<input-stem>.debug/`` after a successful run.
+    """
+    import wave
+
+    input_path = tmp_path / "episode.mp3"
+    input_path.write_bytes(b"")
+    output_path = tmp_path / "episode.md"
+    debug_dir = tmp_path / "episode.debug"
+
+    pipeline, _backend, _segmenter = _make_pipeline(
+        pcm=_silence_pcm(2.0),
+        segments=[Segment(0.0, 2.0, "speech")],
+    )
+    pipeline.debug_dir = debug_dir
+    pipeline.run(input_path=input_path, output_path=output_path)
+
+    decoded = debug_dir / "decoded.wav"
+    assert decoded.is_file(), f"missing decoded.wav; debug_dir={list(debug_dir.iterdir())}"
+    with wave.open(str(decoded), "rb") as w:
+        assert w.getnchannels() == 1
+        assert w.getframerate() == 16_000
+        assert w.getsampwidth() == 2  # 16-bit
+
+
+def test_pipeline_writes_segments_jsonl_to_debug_dir_POD_024(tmp_path: Path) -> None:
+    """AC-US-7.1 — ``segments.jsonl`` carries one JSON object per
+    segment with ``{start, end, label}``."""
+    import json
+
+    input_path = tmp_path / "episode.mp3"
+    input_path.write_bytes(b"")
+    output_path = tmp_path / "episode.md"
+    debug_dir = tmp_path / "episode.debug"
+
+    segments = [
+        Segment(0.0, 1.0, "speech"),
+        Segment(1.0, 2.0, "music"),
+        Segment(2.0, 3.0, "noise"),
+    ]
+    pipeline, _backend, _segmenter = _make_pipeline(
+        pcm=_silence_pcm(3.0),
+        segments=segments,
+    )
+    pipeline.debug_dir = debug_dir
+    pipeline.run(input_path=input_path, output_path=output_path)
+
+    seg_path = debug_dir / "segments.jsonl"
+    assert seg_path.is_file()
+    rows = [json.loads(line) for line in seg_path.read_text(encoding="utf-8").splitlines()]
+    assert rows == [
+        {"start": 0.0, "end": 1.0, "label": "speech"},
+        {"start": 1.0, "end": 2.0, "label": "music"},
+        {"start": 2.0, "end": 3.0, "label": "noise"},
+    ]
+
+
+def test_pipeline_writes_transcribe_jsonl_to_debug_dir_POD_024(tmp_path: Path) -> None:
+    """AC-US-7.1 — ``transcribe.jsonl`` carries one JSON object per
+    speech-segment transcription with ``{start, end, text}``."""
+    import json
+
+    input_path = tmp_path / "episode.mp3"
+    input_path.write_bytes(b"")
+    output_path = tmp_path / "episode.md"
+    debug_dir = tmp_path / "episode.debug"
+
+    pipeline, _backend, _segmenter = _make_pipeline(
+        pcm=_silence_pcm(2.0),
+        segments=[Segment(0.0, 1.0, "speech"), Segment(1.0, 2.0, "speech")],
+        transcripts_per_call=[TranscribedSegment(0.0, 0.5, "hola")],
+    )
+    pipeline.debug_dir = debug_dir
+    pipeline.run(input_path=input_path, output_path=output_path)
+
+    trans_path = debug_dir / "transcribe.jsonl"
+    assert trans_path.is_file()
+    rows = [json.loads(line) for line in trans_path.read_text(encoding="utf-8").splitlines()]
+    # FakeBackend yields one TranscribedSegment per speech segment; pipeline
+    # re-anchors to absolute episode time, so the second row's start is
+    # offset by the second speech segment's start (1.0 s).
+    assert rows == [
+        {"start": 0.0, "end": 0.5, "text": "hola"},
+        {"start": 1.0, "end": 1.5, "text": "hola"},
+    ]
+
+
+def test_pipeline_does_not_create_debug_dir_when_disabled_AC_US_7_2(tmp_path: Path) -> None:
+    """AC-US-7.2 — when ``debug_dir`` is None, no artifact directory
+    is created. Default field value is None; we assert no sibling
+    `.debug/` directory appears.
+    """
+    input_path = tmp_path / "episode.mp3"
+    input_path.write_bytes(b"")
+    output_path = tmp_path / "episode.md"
+
+    pipeline, _backend, _segmenter = _make_pipeline(
+        pcm=_silence_pcm(2.0),
+        segments=[Segment(0.0, 2.0, "speech")],
+    )
+    pipeline.run(input_path=input_path, output_path=output_path)
+
+    debug_dir = tmp_path / "episode.debug"
+    assert not debug_dir.exists(), (
+        "AC-US-7.2 violation: debug dir created without explicit opt-in"
+    )

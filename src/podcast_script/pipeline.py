@@ -21,8 +21,10 @@ that catalogue lands in POD-033 / POD-015).
 
 from __future__ import annotations
 
+import json
 import logging
 import time
+import wave
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,7 +36,7 @@ from .atomic_write import atomic_write
 from .backends.base import TranscribedSegment, WhisperBackend
 from .progress import DECODE_TASK, SEGMENT_TASK, TRANSCRIBE_TASK, Progress
 from .render import RenderFn, TimestampFormat
-from .segment import Segment, Segmenter
+from .segment import Segment, Segmenter, to_jsonl
 
 DecodeFn = Callable[[Path], npt.NDArray[np.float32]]
 """Callable signature the cli supplies to bind ``debug_dir`` and friends
@@ -86,6 +88,12 @@ class Pipeline:
     # root has wired :func:`podcast_script.progress.make_progress` and the
     # phase methods tick it per ADR-0010.
     progress: Progress | None = None
+    # POD-024 — optional ``<input-stem>.debug/`` artifact directory.
+    # When set, each phase persists its output (decoded.wav / segments
+    # .jsonl / transcribe.jsonl); ``decode()`` writes commands.txt
+    # itself when the cli passes ``debug_dir`` through the partial.
+    # Default ``None`` = no artifacts (AC-US-7.2).
+    debug_dir: Path | None = None
 
     def run(self, *, input_path: Path, output_path: Path) -> RunSummary:
         """Run the full pipeline; write Markdown atomically to ``output_path``.
@@ -149,6 +157,8 @@ class Pipeline:
         )
         if self.progress is not None:
             self.progress.advance(DECODE_TASK, 1)
+        if self.debug_dir is not None:
+            self._write_decoded_wav(pcm)
         return pcm
 
     def _choose_fmt(self, pcm: npt.NDArray[np.float32]) -> TimestampFormat:
@@ -170,6 +180,8 @@ class Pipeline:
             # percentage becomes meaningful for the transcribe phase.
             n_speech = sum(1 for s in segments if s.label == "speech")
             self.progress.update(TRANSCRIBE_TASK, total=n_speech)
+        if self.debug_dir is not None:
+            self._write_segments_jsonl(segments)
         return segments
 
     def _transcribe_speech(
@@ -214,6 +226,8 @@ class Pipeline:
                 "n_speech_segments": len(speech_segments),
             },
         )
+        if self.debug_dir is not None:
+            self._write_transcribe_jsonl(transcripts)
         return transcripts
 
     def _render(
@@ -230,3 +244,57 @@ class Pipeline:
         """Atomic temp+rename via :func:`atomic_write` (ADR-0005)."""
         atomic_write(output_path, markdown)
         _log.info("", extra={"event": "write_done", "output": str(output_path)})
+
+    # ------------------------------------------------------------------
+    # POD-024 — --debug artifact writes (AC-US-7.1)
+    # ------------------------------------------------------------------
+
+    def _write_decoded_wav(self, pcm: npt.NDArray[np.float32]) -> None:
+        """Persist ``decoded.wav`` (mono 16 kHz int16) to the debug dir.
+
+        ``decode()`` returns float32 PCM in [-1.0, 1.0] per ADR-0016;
+        we clip and scale to int16 for the WAV header convention. The
+        directory is created lazily so the cli doesn't have to mkdir
+        before the run starts. ADR-0013 forbids new runtime deps, so
+        we use stdlib :mod:`wave` (no soundfile / scipy).
+        """
+        assert self.debug_dir is not None  # narrowed by callers
+        self.debug_dir.mkdir(parents=True, exist_ok=True)
+
+        clipped = np.clip(pcm, -1.0, 1.0)
+        int16 = (clipped * 32767.0).astype(np.int16)
+        with wave.open(str(self.debug_dir / "decoded.wav"), "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(self.sample_rate)
+            w.writeframes(int16.tobytes())
+
+    def _write_segments_jsonl(self, segments: list[Segment]) -> None:
+        """Persist ``segments.jsonl`` (one JSON object per segment).
+
+        Format locked by AC-US-7.1: ``{start, end, label}``; reuses
+        :func:`podcast_script.segment.to_jsonl` so the segments-side
+        canonical wire format lives in one place.
+        """
+        assert self.debug_dir is not None
+        self.debug_dir.mkdir(parents=True, exist_ok=True)
+        (self.debug_dir / "segments.jsonl").write_text(
+            to_jsonl(segments), encoding="utf-8"
+        )
+
+    def _write_transcribe_jsonl(self, transcripts: list[TranscribedSegment]) -> None:
+        """Persist ``transcribe.jsonl`` (one JSON object per
+        re-anchored transcription).
+
+        Format locked by AC-US-7.1: ``{start, end, text}``. ``start``
+        / ``end`` are absolute episode time (the pipeline already
+        re-anchors offsets in :meth:`_transcribe_speech`).
+        """
+        assert self.debug_dir is not None
+        self.debug_dir.mkdir(parents=True, exist_ok=True)
+        lines = [
+            json.dumps({"start": ts.start, "end": ts.end, "text": ts.text})
+            for ts in transcripts
+        ]
+        body = "\n".join(lines) + "\n" if lines else ""
+        (self.debug_dir / "transcribe.jsonl").write_text(body, encoding="utf-8")

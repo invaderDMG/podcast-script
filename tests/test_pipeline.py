@@ -416,13 +416,15 @@ def test_pipeline_advances_each_phase_task_once_POD_013(tmp_path: Path) -> None:
         segments=segments,
     )
 
+    from podcast_script.progress import TaskID
+
     bar = make_progress()
     advances: list[tuple[int, float]] = []
     real_advance = bar.advance
 
-    def recording_advance(task_id: object, advance: float = 1.0) -> None:
-        advances.append((int(task_id), advance))  # type: ignore[arg-type]
-        real_advance(task_id, advance)  # type: ignore[arg-type]
+    def recording_advance(task_id: TaskID, advance: float = 1.0) -> None:
+        advances.append((int(task_id), advance))
+        real_advance(task_id, advance)
 
     bar.advance = recording_advance  # type: ignore[method-assign]
     pipeline.progress = bar

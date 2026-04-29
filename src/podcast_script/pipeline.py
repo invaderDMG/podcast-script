@@ -32,6 +32,7 @@ import numpy.typing as npt
 
 from .atomic_write import atomic_write
 from .backends.base import TranscribedSegment, WhisperBackend
+from .progress import DECODE_TASK, SEGMENT_TASK, TRANSCRIBE_TASK, Progress
 from .render import RenderFn, TimestampFormat
 from .segment import Segment, Segmenter
 
@@ -80,6 +81,11 @@ class Pipeline:
     device: str
     lang: str
     sample_rate: int = 16_000
+    # POD-013 — optional progress bar. When ``None`` the pipeline runs
+    # silently (Tier 1 unit-test path); when present, the cli composition
+    # root has wired :func:`podcast_script.progress.make_progress` and the
+    # phase methods tick it per ADR-0010.
+    progress: Progress | None = None
 
     def run(self, *, input_path: Path, output_path: Path) -> RunSummary:
         """Run the full pipeline; write Markdown atomically to ``output_path``.
@@ -141,6 +147,8 @@ class Pipeline:
                 "duration_in_s": f"{duration_s:.3f}",
             },
         )
+        if self.progress is not None:
+            self.progress.advance(DECODE_TASK, 1)
         return pcm
 
     def _choose_fmt(self, pcm: npt.NDArray[np.float32]) -> TimestampFormat:
@@ -155,6 +163,13 @@ class Pipeline:
             "",
             extra={"event": "segment_done", "n_segments": len(segments)},
         )
+        if self.progress is not None:
+            self.progress.advance(SEGMENT_TASK, 1)
+            # ADR-0010 — set the transcribe task's total now that we know
+            # how many speech segments will be processed; the bar's
+            # percentage becomes meaningful for the transcribe phase.
+            n_speech = sum(1 for s in segments if s.label == "speech")
+            self.progress.update(TRANSCRIBE_TASK, total=n_speech)
         return segments
 
     def _transcribe_speech(
@@ -186,6 +201,12 @@ class Pipeline:
                         text=ts.text,
                     )
                 )
+            # ADR-0010 — tick once per outer-loop iteration over speech
+            # segments. Backend-agnostic: faster-whisper yields incrementally
+            # while mlx-whisper may yield all results at once at the end of
+            # ``transcribe()``. The user sees the same UX on both.
+            if self.progress is not None:
+                self.progress.advance(TRANSCRIBE_TASK, 1)
         _log.info(
             "",
             extra={

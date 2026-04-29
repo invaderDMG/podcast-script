@@ -503,6 +503,11 @@ def test_pipeline_works_without_progress_bar_POD_013(tmp_path: Path) -> None:
 def test_pipeline_writes_decoded_wav_to_debug_dir_POD_024(tmp_path: Path) -> None:
     """AC-US-7.1 — ``decoded.wav`` (mono 16 kHz int16 PCM) lands in
     ``<input-stem>.debug/`` after a successful run.
+
+    Asserts both header (channels / rate / sample width) AND frames:
+    the float32 → int16 conversion in ``_write_decoded_wav`` is the
+    only lossy step in the artifact path (ADR-0016), so a regression
+    that drops the clip or shifts the scale factor must fail this.
     """
     import wave
 
@@ -511,9 +516,12 @@ def test_pipeline_writes_decoded_wav_to_debug_dir_POD_024(tmp_path: Path) -> Non
     output_path = tmp_path / "episode.md"
     debug_dir = tmp_path / "episode.debug"
 
+    # Use a small non-zero PCM so the byte content is meaningful;
+    # values at the [-1, 1] clip boundary lock the saturation behaviour.
+    pcm = np.array([0.0, 0.5, -0.5, 1.0, -1.0], dtype=np.float32)
     pipeline, _backend, _segmenter = _make_pipeline(
-        pcm=_silence_pcm(2.0),
-        segments=[Segment(0.0, 2.0, "speech")],
+        pcm=pcm,
+        segments=[Segment(0.0, 1.0, "speech")],
     )
     pipeline.debug_dir = debug_dir
     pipeline.run(input_path=input_path, output_path=output_path)
@@ -524,6 +532,14 @@ def test_pipeline_writes_decoded_wav_to_debug_dir_POD_024(tmp_path: Path) -> Non
         assert w.getnchannels() == 1
         assert w.getframerate() == 16_000
         assert w.getsampwidth() == 2  # 16-bit
+        frames = w.readframes(w.getnframes())
+
+    # ``_write_decoded_wav`` does ``np.clip(pcm, -1, 1) * 32767`` →
+    # int16. Locked here so a future regression that drops the clip
+    # (overflow → wraparound) or changes the scale factor fails.
+    assert len(frames) == len(pcm) * 2, "expected one int16 sample per PCM value"
+    expected = (np.clip(pcm, -1.0, 1.0) * 32767.0).astype(np.int16).tobytes()
+    assert frames == expected
 
 
 def test_pipeline_writes_segments_jsonl_to_debug_dir_POD_024(tmp_path: Path) -> None:
@@ -605,3 +621,77 @@ def test_pipeline_does_not_create_debug_dir_when_disabled_AC_US_7_2(tmp_path: Pa
 
     debug_dir = tmp_path / "episode.debug"
     assert not debug_dir.exists(), "AC-US-7.2 violation: debug dir created without explicit opt-in"
+
+
+def test_partial_transcribe_jsonl_survives_mid_loop_failure_AC_US_7_1(
+    tmp_path: Path,
+) -> None:
+    """AC-US-7.1 — ``run completes (success or failure)`` clause.
+
+    Inject a backend whose ``transcribe`` succeeds for the first
+    speech segment and raises on the second; assert the partial
+    ``transcribe.jsonl`` on disk contains the first segment's
+    transcripts. Without the incremental flush, the file would be
+    empty (or absent) after the failure.
+    """
+    import json as _json
+
+    input_path = tmp_path / "episode.mp3"
+    input_path.write_bytes(b"")
+    output_path = tmp_path / "episode.md"
+    debug_dir = tmp_path / "episode.debug"
+
+    class _MidLoopFailingBackend:
+        name = "fail-mid"
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def load(self, model: str, device: str) -> None:
+            del model, device
+
+        def transcribe(
+            self,
+            pcm: npt.NDArray[np.float32],
+            lang: str,
+            sample_rate: int = SAMPLE_RATE,
+        ) -> Iterable[TranscribedSegment]:
+            del pcm, lang, sample_rate
+            self.calls += 1
+            if self.calls == 1:
+                # First speech segment yields one transcribed slice.
+                return [TranscribedSegment(0.0, 0.5, "primero")]
+            # Second invocation raises after some work — synthetic
+            # mid-loop failure (e.g. backend OOM, GPU drop, etc.).
+            raise DecodeError("synthetic mid-loop failure for AC-US-7.1 partial-flush")
+
+    failing_backend = _MidLoopFailingBackend()
+    pcm = _silence_pcm(2.0)
+    segments = [
+        Segment(0.0, 1.0, "speech"),
+        Segment(1.0, 2.0, "speech"),
+    ]
+
+    pipeline = Pipeline(
+        decode=lambda _p: pcm,
+        segmenter=_FakeSegmenter(segments),
+        backend=failing_backend,
+        render=_stub_render,
+        model="tiny",
+        device="cpu",
+        lang="es",
+        sample_rate=SAMPLE_RATE,
+        debug_dir=debug_dir,
+    )
+
+    with pytest.raises(DecodeError):
+        pipeline.run(input_path=input_path, output_path=output_path)
+
+    # The first segment's transcript MUST be on disk after the failure.
+    trans_path = debug_dir / "transcribe.jsonl"
+    assert trans_path.is_file(), (
+        f"AC-US-7.1 violation: no transcribe.jsonl after mid-loop failure; "
+        f"debug_dir={list(debug_dir.iterdir()) if debug_dir.exists() else 'absent'}"
+    )
+    rows = [_json.loads(line) for line in trans_path.read_text(encoding="utf-8").splitlines()]
+    assert rows == [{"start": 0.0, "end": 0.5, "text": "primero"}]

@@ -134,6 +134,14 @@ def test_cli_tiny_pipeline_produces_structural_markdown(
     for noise in ("Warning:", "DeprecationWarning", "RuntimeWarning"):
         assert noise not in result.stderr, f"{noise!r} leaked to stderr; stderr={result.stderr!r}"
 
+    # POD-033 — every podcast_script-emitted line on stderr matches
+    # the locked logfmt grammar (NFR-10). Tier 3 covers pipeline-phase
+    # events (``model_load_*``, ``decode_*``, ``segment_*``,
+    # ``transcribe_*``, ``render_done``, ``write_done``) the Tier 1
+    # tests in test_cli.py can't reach without standing up the real
+    # backend.
+    _assert_all_log_lines_match_logfmt(result.stderr)
+
     body = output_path.read_text(encoding="utf-8")
     _assert_structural_invariants(body)
 
@@ -250,3 +258,26 @@ def _assert_same_structure(actual: str, reference: str) -> None:
         f"actual=({actual_starts}, {actual_ends}) "
         f"reference=({ref_starts}, {ref_ends})"
     )
+
+
+# POD-033 — same logfmt grammar as locked in
+# ``tests/test_cli.py::TestNFR10LogfmtRegex._PAIR``. Duplicated as a
+# free function here rather than imported across test modules so each
+# tier reads top-down without a shared helper file.
+_LOGFMT_PAIR = r'[A-Za-z_][A-Za-z0-9_]*=(?:"(?:[^"\\]|\\.)*"|[^\s="]+)'
+_LOGFMT_LINE_RE = re.compile(rf"^{_LOGFMT_PAIR}(?: {_LOGFMT_PAIR})*$")
+
+
+def _assert_all_log_lines_match_logfmt(stderr: str) -> None:
+    """Every line starting with ``level=`` must match NFR-10's logfmt
+    grammar. Lines from C-level libs (``[ctranslate2]`` notice, Keras
+    progress bar) don't start with ``level=`` and are silently skipped
+    — out of NFR-10 scope per "tool's logging integration".
+    """
+    for line in stderr.splitlines():
+        if not line.startswith("level="):
+            continue
+        assert _LOGFMT_LINE_RE.match(line), (
+            f"NFR-10 violation: non-logfmt podcast_script log line: {line!r}"
+        )
+        assert " event=" in f" {line}", f"NFR-10 violation: missing event= key: {line!r}"

@@ -8,6 +8,7 @@ config-merge surface (AC-US-4.1, AC-US-4.2, AC-US-4.4) at the CLI level.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -1189,3 +1190,108 @@ class TestDebugDirRefuseWithoutForce:
         # Stale file gone (rmtree happened); the dir itself is back.
         assert debug_dir.is_dir()
         assert not (debug_dir / "stale.txt").exists()
+
+
+class TestNFR10LogfmtRegex:
+    """POD-033 — every stderr line emitted by ``podcast_script``'s
+    logging integration matches the locked logfmt grammar (NFR-10).
+
+    Filter: lines that start with ``level=`` are ours;
+    :class:`LogfmtFormatter` always emits ``level`` first per AC-US-3.4.
+    Anything else (the C-level ``[ctranslate2] [warning]`` notice,
+    Keras's ``93/93 - 1s …`` predict bar) is library output, not our
+    log integration — out of NFR-10 scope and silently skipped here.
+    """
+
+    # NFR-10 grammar: ``key=value`` pairs separated by single spaces.
+    # - keys: identifier-shaped (alpha/underscore start, alnum/underscore body).
+    # - values: bare token (no whitespace, no ``=``, no ``"``) OR a
+    #   double-quoted string whose interior allows ``\"`` and ``\\``
+    #   backslash escapes (LogfmtFormatter._format_value).
+    _PAIR = r'[A-Za-z_][A-Za-z0-9_]*=(?:"(?:[^"\\]|\\.)*"|[^\s="]+)'
+    _LINE_RE = re.compile(rf"^{_PAIR}(?: {_PAIR})*$")
+
+    @classmethod
+    def _validate(cls, stderr: str) -> int:
+        """Assert every podcast_script-emitted line is logfmt; return count."""
+        validated = 0
+        for line in stderr.splitlines():
+            if not line.startswith("level="):
+                continue
+            assert cls._LINE_RE.match(line), (
+                f"NFR-10 violation: non-logfmt podcast_script log line: {line!r}"
+            )
+            # AC-US-3.4 — every log line MUST contain at minimum
+            # level= and event=. ``level=`` is the prefix we filtered on;
+            # ``event=`` must appear somewhere on the line.
+            assert " event=" in f" {line}", f"NFR-10 violation: missing event= key: {line!r}"
+            validated += 1
+        return validated
+
+    def test_cli_lifecycle_lines_match_logfmt(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Tier 1 — the four cli-owned lifecycle events (``startup``,
+        ``config_loaded``, ``backend_selected``, ``done``) all match
+        the locked grammar. Pipeline is stubbed so the test stays
+        sub-second; pipeline-phase events are covered by the Tier 3
+        extension in ``test_integration_tiny.py``.
+        """
+        from podcast_script import cli as cli_module
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: _RUN_SUMMARY_STUB)
+        input_file = _touch(tmp_path, "episode.mp3")
+
+        result = runner.invoke(app, [str(input_file), "--lang", "es"])
+
+        assert result.exit_code == 0, f"stderr={result.stderr!r}"
+        assert self._validate(result.stderr) == 4
+
+    def test_error_path_lines_match_logfmt(self, runner: CliRunner, tmp_path: Path) -> None:
+        """Error events also match the regex; ``cause=`` carries the
+        exception message which usually has whitespace, so the value
+        gets quoted by :class:`LogfmtFormatter`. This locks the
+        round-trip: a quoted ``cause`` with embedded backslashes /
+        escaped quotes still parses as a single logfmt pair.
+        """
+        input_file = _touch(tmp_path, "episode.mp3")
+        # No --lang → UsageError → event=usage_error logged.
+        result = runner.invoke(app, [str(input_file)])
+
+        assert result.exit_code == 2, f"stderr={result.stderr!r}"
+        # At least the usage_error line is ours; startup may or may not
+        # be present depending on whether _resolve_verbosity raised
+        # before the explicit log.info("startup") call.
+        assert self._validate(result.stderr) >= 1
+
+    def test_quoted_value_with_special_chars_round_trips(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A path containing whitespace + non-ASCII (EC-3) hits the
+        quoted-value branch. The regex's ``"(?:[^"\\\\]|\\\\.)*"`` arm
+        must accept the result.
+        """
+        from podcast_script import cli as cli_module
+
+        monkeypatch.setattr(cli_module, "_run_pipeline", lambda **_: _RUN_SUMMARY_STUB)
+        # EC-3 path with spaces + non-ASCII — exercises the quoted
+        # ``input=`` value path inside backend_selected / done.
+        input_file = _touch(tmp_path, "canción de prueba.mp3")
+
+        result = runner.invoke(app, [str(input_file), "--lang", "es"])
+
+        assert result.exit_code == 0, f"stderr={result.stderr!r}"
+        # ``done`` carries ``input="..."`` quoted; if the regex rejected
+        # quoted values the whole-line match would fail.
+        n = self._validate(result.stderr)
+        assert n == 4
+        # And the done line specifically must contain a quoted input=
+        # token (whitespace forces quoting).
+        done_line = next(line for line in result.stderr.splitlines() if "event=done" in line)
+        assert 'input="' in done_line, f"expected quoted input=; got {done_line!r}"

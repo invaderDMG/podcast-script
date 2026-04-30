@@ -8,9 +8,10 @@ and the project follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0
 Per `PROJECT_PLAN.md` §1.5 (the plan is frozen at v1.0), this file also
 carries:
 
-- **Sprint actuals** — per-sprint `velocity_actual=N pts` line written
-  at every sprint review per §4.3 / Q12; if the forecast is missed by
-  ≥ 2 pts, a one-sentence cause follows.
+- **Sprint actuals** — per-sprint `velocity_actual=N` line written
+  at every sprint review per §4.3 / Q12 (`N` is the integer point
+  count completed); if the forecast is missed by ≥ 2 points, a
+  one-sentence cause follows on the same line.
 - **Schedule slippage** — actual tag dates differ from the §7
   projected calendar; the actual dates are recorded here, the
   projection in PROJECT_PLAN.md stays as the original baseline.
@@ -19,10 +20,16 @@ carries:
   PROJECT_PLAN.md §10.
 
 The contracts treated as "format committed in writing" under SemVer
-(SRS §16.1) are: output Markdown shape (§1.6), `--lang` set (§1.7),
-exit-code policy (NFR-9), logfmt event catalogue (NFR-10 + ADR-0012),
-and the v1.0.0 release-trigger criteria. Changes to any of these are
-SemVer-major.
+(SRS §16.1) are:
+
+- §1.6 — output Markdown shape (English markers, MM:SS / HH:MM:SS).
+- §1.7 — the eight-code `--lang` set.
+- NFR-9 — exit-code policy (0..6).
+- NFR-10 — logfmt log format (+ ADR-0012's 22-token event catalogue).
+- §9.1 — CLI grammar (flag set + short aliases `-o` / `-f` / `-v` / `-q`).
+
+Changes to any of these after v1.0.0 are breaking and warrant a
+major-version bump per SemVer.
 
 ## [Unreleased]
 
@@ -47,6 +54,14 @@ SemVer-major.
 
 #### Transcription pipeline
 
+- Typed exception hierarchy per ADR-0006 — `PodcastScriptError` base
+  + `UsageError` / `InputIOError` / `DecodeError` / `ModelError` /
+  `OutputExistsError`, each carrying its `exit_code` and `event`
+  class attributes (PR #2 / POD-002).
+- `LogfmtFormatter` + `RichHandler` logging stack per ADR-0008 — the
+  rendering channel for every log line on stderr; soft-wrap subclass
+  keeps long lines on one line (PR #3 / POD-003, refined in PR #19
+  / POD-015).
 - `ffmpeg`-backed C-Decode to mono 16 kHz float32 PCM per ADR-0016
   (PR #5 / POD-007).
 - Atomic temp-file + `os.replace` write per ADR-0005; failure during
@@ -161,12 +176,26 @@ SemVer-major.
   requires a smoke-test fixture under `examples/sources/<code>/`
   and a row in the README + SRS §1.7 tables; SemVer-minor.
   Removing a code is SemVer-major (Risk #10).
+- **After any change to the Markdown output shape** (English music
+  markers, `MM:SS` / `HH:MM:SS` timestamp format, blockquote +
+  speech-line interleave, `noise` / `silence` dropped) — bump
+  SemVer-major. The output shape is the user-facing contract per
+  SRS §1.6 + §16.1; downstream tooling parses the literal byte
+  sequences (e.g. `> [<ts> — music starts]`).
+- **After any change to the CLI grammar** — the locked flag set,
+  argument order, and short aliases `-o` / `-f` / `-v` / `-q` per
+  SRS §9.1 / §16.1 are part of the format contract. Adding a flag
+  is SemVer-minor (additive); changing or removing one, renaming a
+  short alias, or relaxing the verbosity-flag mutual-exclusion rule
+  is SemVer-major.
 
 ### Sprint actuals
 
-Format per `PROJECT_PLAN.md` §4.3: `velocity_actual=<N> pts` per
-sprint review; if forecast missed by ≥ 2 pts a one-sentence cause
-follows. Empty until the first formal sprint review.
+Format per `PROJECT_PLAN.md` §4.3 / §1.4 glossary:
+`velocity_actual=<N>` (integer points completed) per sprint review;
+if the forecast was missed by ≥ 2 points a one-sentence cause
+follows on the same line. Empty until the first formal sprint
+review.
 
 - _(no entries yet — sprint reviews record actuals here as they
   happen.)_

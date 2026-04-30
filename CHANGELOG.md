@@ -150,7 +150,7 @@ major-version bump per SemVer.
   `pty.openpty()` and asserts ANSI CSI escapes from `rich.Progress`;
   AC-US-3.2 spawns it with stderr piped and asserts no ANSI plus the
   three logfmt phase-boundary events (`decode_done`, `segment_done`,
-  `transcribe_done`) as the line-per-phase fallback (PR #TBD /
+  `transcribe_done`) as the line-per-phase fallback (PR #26 /
   POD-035).
 - GitHub Actions Ubuntu + macOS-14 matrix on every push / PR per
   brief §9; the slow tier opts in via `pytest -m slow`

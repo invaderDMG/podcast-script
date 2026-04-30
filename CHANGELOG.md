@@ -145,6 +145,13 @@ major-version bump per SemVer.
 - Tier 3 integration test running the full CLI on the real fixture
   with `--model tiny --backend faster-whisper` per ADR-0017
   (PR #17 / POD-031 scaffold).
+- Tier 3 PTY / no-PTY harness pinning the cli composition root's
+  `stderr.isatty()` sensing — AC-US-3.1 spawns the CLI under a real
+  `pty.openpty()` and asserts ANSI CSI escapes from `rich.Progress`;
+  AC-US-3.2 spawns it with stderr piped and asserts no ANSI plus the
+  three logfmt phase-boundary events (`decode_done`, `segment_done`,
+  `transcribe_done`) as the line-per-phase fallback (PR #26 /
+  POD-035).
 - GitHub Actions Ubuntu + macOS-14 matrix on every push / PR per
   brief §9; the slow tier opts in via `pytest -m slow`
   (PR #6 / POD-004; slow-tier step added in PR #17).

@@ -162,7 +162,7 @@ major-version bump per SemVer.
   before reaching production. Asserts the locked `event=done`
   summary carries `input="…"` verbatim through logfmt's
   quoted-value branch, and that no `.tmp` debris survives the
-  atomic write (ADR-0005) on a non-ASCII output parent (PR #TBD /
+  atomic write (ADR-0005) on a non-ASCII output parent (PR #27 /
   POD-028).
 - GitHub Actions Ubuntu + macOS-14 matrix on every push / PR per
   brief §9; the slow tier opts in via `pytest -m slow`

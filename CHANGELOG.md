@@ -152,6 +152,18 @@ major-version bump per SemVer.
   three logfmt phase-boundary events (`decode_done`, `segment_done`,
   `transcribe_done`) as the line-per-phase fallback (PR #26 /
   POD-035).
+- Tier 3 EC-3 round-trip — full CLI on an input path whose parent
+  directory **and** leaf filename both carry whitespace + non-ASCII
+  characters (`carpeta con espacios/canción de prueba.mp3` →
+  `salida con tildes/canción de prueba.md`). Pins R-4
+  (SYSTEM_DESIGN Risk #6): C-Decode's list-arg `subprocess.run`
+  form (POD-007) is the load-bearing piece, and a future refactor
+  to `shell=True` or string concatenation would now fail this test
+  before reaching production. Asserts the locked `event=done`
+  summary carries `input="…"` verbatim through logfmt's
+  quoted-value branch, and that no `.tmp` debris survives the
+  atomic write (ADR-0005) on a non-ASCII output parent (PR #TBD /
+  POD-028).
 - GitHub Actions Ubuntu + macOS-14 matrix on every push / PR per
   brief §9; the slow tier opts in via `pytest -m slow`
   (PR #6 / POD-004; slow-tier step added in PR #17).

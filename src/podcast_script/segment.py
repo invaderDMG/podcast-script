@@ -198,7 +198,7 @@ class InaSpeechSegmenter:
                 ) from e
         return self._engine
 
-    def _build_engine(self) -> object:
+    def _build_engine(self) -> object:  # pragma: no cover
         """Construct the underlying ``inaSpeechSegmenter.Segmenter``.
 
         Override-point for unit tests (subclass and replace this method to
@@ -224,6 +224,16 @@ class InaSpeechSegmenter:
 
         All three shims disappear the day inaSpeechSegmenter ships an
         Apple-Silicon-clean release that targets numpy 2 + Keras 3.
+
+        ``# pragma: no cover`` (NFR-8 / POD-032): this method is the
+        TF-only branch of the lazy-import boundary (ADR-0011).  Tier 1
+        unit tests override it via the stub seam in ``test_segment.py``
+        — production execution requires TensorFlow + pyannote, which is
+        the contract surface Tier 2 contract tests cover (POD-030)
+        when run with the heavy deps installed.  Excluding it lets the
+        segment-merge logic carry the 100% line coverage gate that
+        NFR-8 actually targets without forcing TF onto the unit-tier
+        runner.
         """
         os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
         _patch_pyannote_viterbi_for_modern_numpy()
@@ -330,7 +340,7 @@ class InaSpeechSegmenter:
 _PYANNOTE_PATCHED = False
 
 
-def _patch_pyannote_viterbi_for_modern_numpy() -> None:
+def _patch_pyannote_viterbi_for_modern_numpy() -> None:  # pragma: no cover
     """SPK-1 fallback shim — see :meth:`InaSpeechSegmenter._build_engine`.
 
     Replaces the two functions in
@@ -340,6 +350,10 @@ def _patch_pyannote_viterbi_for_modern_numpy() -> None:
     :data:`_PYANNOTE_PATCHED`. Importing pyannote here is part of the
     heavy import boundary — we already crossed it in the caller
     (``_build_engine``) so triggering it once more is free.
+
+    ``# pragma: no cover`` (NFR-8 / POD-032): only reachable from the
+    production ``_build_engine`` path, which is itself excluded for the
+    same reason — pyannote is part of the TF dep stack.
     """
     global _PYANNOTE_PATCHED
     if _PYANNOTE_PATCHED:

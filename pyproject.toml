@@ -41,6 +41,12 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.10",
     "pytest>=8.0",
+    # POD-032 — property tests for the segment-merge module (NFR-3 / NFR-4)
+    # plus the NFR-8 100% line-coverage gate. Both are dev-only, so the
+    # ADR-0011 lazy-import boundary and ADR-0013 no-new-runtime-deps
+    # invariants are unaffected.
+    "hypothesis>=6.100",
+    "pytest-cov>=5.0",
 ]
 
 [tool.ruff]
@@ -66,6 +72,22 @@ files = ["src", "tests"]
 [[tool.mypy.overrides]]
 module = ["mlx_whisper", "mlx_whisper.*"]
 ignore_missing_imports = true
+
+[tool.coverage.run]
+branch = false
+source = ["src/podcast_script"]
+
+[tool.coverage.report]
+# Standard exclusions on top of the explicit ``# pragma: no cover``
+# annotations the source carries. ``if TYPE_CHECKING:`` blocks are
+# documentation surfaces (typing-only Protocols, structural
+# placeholders) — never reached at runtime.
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "\\.\\.\\.",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

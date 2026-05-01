@@ -229,7 +229,7 @@ major-version bump per SemVer.
   modules' `REPO_ROOT` constants gained one extra `.parent` to
   preserve the path-up traversal across the deeper directory; without
   that fix the slow tier would have skipped silently rather than run
-  (PR #TBD / POD-029).
+  (PR #30 / POD-029).
 
 ### Maintainer runbook
 

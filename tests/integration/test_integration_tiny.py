@@ -261,7 +261,7 @@ def _assert_same_structure(actual: str, reference: str) -> None:
 
 
 # POD-033 — same logfmt grammar as locked in
-# ``tests/test_cli.py::TestNFR10LogfmtRegex._PAIR``. Duplicated as a
+# ``tests/unit/test_cli.py::TestNFR10LogfmtRegex._PAIR``. Duplicated as a
 # free function here rather than imported across test modules so each
 # tier reads top-down without a shared helper file.
 _LOGFMT_PAIR = r'[A-Za-z_][A-Za-z0-9_]*=(?:"(?:[^"\\]|\\.)*"|[^\s="]+)'

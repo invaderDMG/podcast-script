@@ -9,7 +9,7 @@ segment list MUST account for every second of input regardless).
 
 ADR-0017 §"Property-based testing throughout" explicitly green-lights
 ``hypothesis`` as the Tier-2 enhancement on top of the hand-written
-invariants in ``tests/test_segment.py``. The strategies here generate
+invariants in ``tests/unit/test_segment.py``. The strategies here generate
 the full space of *valid* raw segmenter outputs — sorted-or-not,
 disjoint, label-in-known-vocabulary — because the production wrapper's
 ModelError guards (overlap / unknown label) push those failure paths
@@ -20,8 +20,8 @@ than NFR-3 / NFR-4.
 NFR-8 100% line coverage gate on the segment-merge surface
 (``_normalize_to_segments``, ``to_jsonl``, ``Segment``) is enforced by a
 discrete CI step (see ``.github/workflows/ci.yml``); these property
-tests + the example tests in ``test_segment.py`` together pin the lines
-that matter.
+tests + the example tests in ``tests/unit/test_segment.py`` together pin
+the lines that matter.
 """
 
 from __future__ import annotations

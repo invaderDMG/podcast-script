@@ -7,10 +7,10 @@ EC-3 (SRS §7) is the documented edge case "user passes
 load-bearing implementation choice is :func:`subprocess.run` invoked
 with a list of arguments rather than a shell string, locked in
 ``decode.py`` (POD-007 / R-4 / SYSTEM_DESIGN §5.6). Tier 1 coverage
-already exists at ``tests/test_decode.py::test_decode_handles_path_with_
-spaces_and_non_ascii_EC_3`` and ``tests/test_cli.py::test_quoted_value_
-with_special_chars_round_trips``; this module adds the missing **Tier 3
-end-to-end** layer per ADR-0017 — real ffmpeg decode, real
+already exists at ``tests/unit/test_decode.py::test_decode_handles_path_
+with_spaces_and_non_ascii_EC_3`` and ``tests/unit/test_cli.py::test_quoted
+_value_with_special_chars_round_trips``; this module adds the missing
+**Tier 3 end-to-end** layer per ADR-0017 — real ffmpeg decode, real
 ``faster-whisper`` tiny transcribe, real Markdown render, real atomic
 write — on the EC-3 path.
 
@@ -188,7 +188,7 @@ def test_cli_round_trips_ec_3_path_with_spaces_and_non_ascii(
 # ---------------------------------------------------------------------------
 
 # POD-033 — same logfmt grammar as locked in
-# ``tests/test_cli.py::TestNFR10LogfmtRegex._PAIR``.
+# ``tests/unit/test_cli.py::TestNFR10LogfmtRegex._PAIR``.
 _LOGFMT_PAIR = r'[A-Za-z_][A-Za-z0-9_]*=(?:"(?:[^"\\]|\\.)*"|[^\s="]+)'
 _LOGFMT_LINE_RE = re.compile(rf"^{_LOGFMT_PAIR}(?: {_LOGFMT_PAIR})*$")
 

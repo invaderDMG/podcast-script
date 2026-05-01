@@ -443,7 +443,7 @@ class TestForceOverwrite:
 
     The pipeline is monkeypatched to keep these tests in the cli's
     Tier-1 boundary (no ffmpeg, no model). The unit-level atomic_write
-    invariants are covered separately in ``tests/test_atomic_write.py``.
+    invariants are covered separately in ``tests/unit/test_atomic_write.py``.
     """
 
     def test_force_actually_replaces_existing_output_AC_US_6_2(
@@ -671,7 +671,7 @@ class TestEventCatalogue:
     The catalogue is the implicit grep contract for shell scripts wrapping
     the tool (SRS Risk #9). These tests lock the four lifecycle tokens
     that depend on cli orchestration; the phase-boundary tokens are
-    covered by ``tests/test_pipeline.py``.
+    covered by ``tests/unit/test_pipeline.py``.
     """
 
     def _events_in(self, stderr: str) -> list[str]:

@@ -175,7 +175,7 @@ major-version bump per SemVer.
   ADR-0017 §"Property-based testing throughout" was the green
   light; `hypothesis` and `pytest-cov` are dev-only, so the
   ADR-0011 lazy-import boundary and ADR-0013 no-new-runtime-deps
-  invariants are unaffected (PR #TBD / POD-032).
+  invariants are unaffected (PR #28 / POD-032).
 - NFR-8 100% line-coverage gate on the segment-merge module as a
   discrete CI step running `pytest --cov=podcast_script.segment
   --cov-fail-under=100` against the unit tier. The TF-only
@@ -183,7 +183,7 @@ major-version bump per SemVer.
   `# pragma: no cover` per ADR-0011 — production execution
   requires TensorFlow + pyannote, which is the contract surface
   Tier 2 contract tests cover (POD-030) when run with the heavy
-  deps installed (PR #TBD / POD-032).
+  deps installed (PR #28 / POD-032).
 - GitHub Actions Ubuntu + macOS-14 matrix on every push / PR per
   brief §9; the slow tier opts in via `pytest -m slow`
   (PR #6 / POD-004; slow-tier step added in PR #17).

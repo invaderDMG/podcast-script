@@ -91,7 +91,7 @@ exclude_lines = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = ["-ra", "--strict-markers", "--strict-config", "-m", "not slow"]
+addopts = ["-ra", "--strict-markers", "--strict-config", "-m", "not slow and not contract"]
 # Warnings policy — NFR-10 (logfmt key=value on stderr only). Anything
 # that escapes the runtime suppression in `InaSpeechSegmenter` is a real
 # regression: it leaks Python warnings into the user's pipe and breaks
@@ -111,4 +111,12 @@ markers = [
     # `pytest -m "slow or not slow"`. CI runs the slow suite on a
     # separate job so the unit-tier feedback loop stays sub-second.
     "slow: end-to-end tests that decode + transcribe; require ffmpeg + a Whisper model on disk",
+    # Tier 2 contract tests asserting the WhisperBackend Protocol
+    # invariants run identically against FakeBackend + each real
+    # backend (POD-030, ADR-0017). Skipped by default — opt in with
+    # `pytest -m contract`. CI runs the contract suite on a dedicated
+    # step (Ubuntu + macOS-14 matrix) so the unit-tier feedback loop
+    # stays sub-second; real-backend parametrisations skip cleanly when
+    # their library is not importable per ADR-0011.
+    "contract: WhisperBackend Protocol invariants run vs FakeBackend + real backends (Tier 2)",
 ]

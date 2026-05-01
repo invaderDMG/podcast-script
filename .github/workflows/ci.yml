@@ -65,6 +65,17 @@ jobs:
             --cov-fail-under=100 \
             tests/test_segment.py tests/test_segment_property.py
 
+      - name: Tests (Tier 2 / contract)
+        # ADR-0017 mandates Tier 2 on every PR + push, matrix Ubuntu +
+        # macOS. The default suite excludes ``contract`` (keeps the
+        # unit-tier feedback loop sub-second); this step opts in. The
+        # parametrized backend fixture skips real-backend params on
+        # ImportError per ADR-0011 — so on Ubuntu the ``mlx-whisper``
+        # parametrisation is skipped (PEP 508 marker excludes it from
+        # ``uv sync`` outside darwin/arm64), and on macOS-14 both real
+        # backends run. FakeBackend always runs. POD-030.
+        run: uv run pytest -m contract -v
+
       - name: Tests (Tier 3 / slow integration)
         # ADR-0017 mandates Tier 3 on every PR + push, matrix Ubuntu +
         # macOS. The default suite excludes ``slow`` (sub-second feedback

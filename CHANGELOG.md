@@ -229,7 +229,7 @@ major-version bump per SemVer.
   no tempfile is ever created before `atomic_write` opens one at
   the very end of `Pipeline.run`. POSIX-only (Windows skipped);
   marked `pytest.mark.slow`; CI's slow-tier step runs it on the
-  Ubuntu + macOS-14 matrix per ADR-0017 (PR #TBD / POD-034).
+  Ubuntu + macOS-14 matrix per ADR-0017 (PR #32 / POD-034).
 
 ### Changed
 

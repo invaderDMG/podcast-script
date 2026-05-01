@@ -1,0 +1,72 @@
+# Dependabot configuration — POD-005.
+#
+# Mitigation for SRS §15 T2 ("Dependency supply chain") and PROJECT_PLAN
+# §10 R-1 (a headline risk per §1.5 governance — reviewed at every
+# sprint planning). Pairs with `.github/workflows/pip-audit.yml` to
+# cover both the PR-time path (Dependabot opens an update PR per
+# advisory or upstream release) and the periodic-scan path (pip-audit
+# weekly cron catches advisories that don't trigger an upstream release).
+#
+# References:
+# - PROJECT_BRIEF.md §16 — supply-chain policy.
+# - PROJECT_PLAN.md §5 (POD-005) + §10 (R-1).
+# - https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+version: 2
+updates:
+  # Python dependencies — Dependabot's `pip` ecosystem reads
+  # `pyproject.toml` + `uv.lock` (uv format is supported as of 2024).
+  # Solo-maintainer cadence: one batched PR per week instead of one PR
+  # per package per release. Major bumps stay un-grouped so they get
+  # individual review (likely-breaking changes deserve isolated
+  # diffs).
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      # Monday lands the batched PR around the same time the
+      # pip-audit cron runs (06:00 UTC) — easy single weekly review
+      # window for the maintainer.
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - python
+    commit-message:
+      prefix: chore(deps)
+      include: scope
+    groups:
+      # Group all minor + patch updates across the Python dep set into a
+      # single PR per week. Reduces noise; breaks open only when a
+      # bump genuinely warrants attention.
+      python-minor-patch:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+
+  # GitHub Actions dependencies — pinned action references in
+  # ``.github/workflows/*.yml``. Cadence + grouping mirrors the Python
+  # ecosystem; volume is much lower (~3-4 actions in use), so the
+  # group rarely fires but the configuration is symmetric.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: chore(ci)
+      include: scope
+    groups:
+      actions-minor-patch:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch

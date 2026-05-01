@@ -214,6 +214,22 @@ major-version bump per SemVer.
   suppression of upstream lib noise at narrow boundaries in
   `segment.py`; `HF_HUB_VERBOSITY=error` set at backend module
   load for cold-cache HF auth notice (PR #18).
+- Tier 3 failure-injection test (`tests/integration/test_failure_
+  injection.py`) — spawns the CLI as a real subprocess on
+  `examples/sample.mp3`, watches stderr for the locked
+  `event=transcribe_start` phase boundary (ADR-0012), then
+  SIGTERMs the child mid-transcribe and asserts (a) child exited
+  non-zero, (b) no Markdown landed at the resolved output path,
+  (c) no `*.tmp` debris in the parent dir. Pins NFR-5 + AC-US-6.3
+  end-to-end against the SRS §14.1 traceability-matrix row that
+  names this test verbatim. Uncaught SIGTERM is the stronger
+  failure shape than SIGINT (which ADR-0014 catches and converts
+  to a clean exit-1 path that runs Python cleanup); under SIGTERM
+  the only thing keeping the target path clean is the design —
+  no tempfile is ever created before `atomic_write` opens one at
+  the very end of `Pipeline.run`. POSIX-only (Windows skipped);
+  marked `pytest.mark.slow`; CI's slow-tier step runs it on the
+  Ubuntu + macOS-14 matrix per ADR-0017 (PR #TBD / POD-034).
 
 ### Changed
 

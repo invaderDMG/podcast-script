@@ -17,7 +17,8 @@ import numpy.typing as npt
 import pytest
 
 from podcast_script.backends.base import TranscribedSegment
-from tests.contract.conftest import BackendFactory
+from podcast_script.errors import ModelError
+from tests.contract.conftest import BackendFactory, FailingBackendFactory
 
 SAMPLE_RATE = 16_000
 
@@ -146,3 +147,50 @@ def test_transcribe_is_repeatable_after_single_load(
 
     list(backend.transcribe(pcm, lang="es"))
     list(backend.transcribe(pcm, lang="es"))
+
+
+# ---------------------------------------------------------------------------
+# I5 — model-load failure surfaces as ModelError (not RuntimeError / ValueError)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.contract
+def test_load_wraps_underlying_failure_as_model_error(
+    failing_backend_factory: FailingBackendFactory,
+) -> None:
+    """ADR-0017 Tier 2 invariant I5: when the underlying library reports
+    a load failure, every backend MUST raise :class:`ModelError`. The
+    cli's NFR-9 mapping translates ``ModelError`` to exit code 5
+    (ADR-0006); a raw ``RuntimeError`` or ``ConnectionError`` would
+    escape that contract and surface as the catch-all exit 1, breaking
+    the published shell-script contract (Risk #8).
+
+    The same mechanism covers AC-US-5.4 (network unreachable on first
+    run): all download / cache failures share the wrap.
+    """
+    failure = ConnectionError("Failed to resolve 'huggingface.co'")
+    backend = failing_backend_factory(failure)
+
+    with pytest.raises(ModelError) as exc_info:
+        backend.load(model="tiny", device="cpu")
+
+    assert exc_info.value.__cause__ is failure, (
+        "ModelError MUST chain the original exception via __cause__ for debuggability "
+        f"(got {exc_info.value.__cause__!r})"
+    )
+
+
+@pytest.mark.contract
+def test_load_does_not_swallow_keyboard_interrupt(
+    failing_backend_factory: FailingBackendFactory,
+) -> None:
+    """ADR-0014 / ADR-0017 corollary to I5: ``KeyboardInterrupt`` and
+    ``SystemExit`` MUST propagate untouched through ``load()`` even
+    though the broad ``Exception`` wrap is in place. Wrapping these
+    would mis-translate Ctrl-C to exit 5 instead of the standard 130;
+    AC-US-5.3 resume / restart is on the user, not us.
+    """
+    backend = failing_backend_factory(KeyboardInterrupt())
+
+    with pytest.raises(KeyboardInterrupt):
+        backend.load(model="tiny", device="cpu")

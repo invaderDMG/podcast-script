@@ -25,6 +25,7 @@ from podcast_script.backends.base import WhisperBackend
 from tests.fakes.whisper import FakeBackend
 
 BackendFactory = Callable[[], WhisperBackend]
+FailingBackendFactory = Callable[[BaseException], WhisperBackend]
 
 _FASTER_TINY_MODEL = "tiny"
 # mlx-whisper expects a full HF repo ID — bare ``"tiny"`` 404s. The
@@ -120,4 +121,89 @@ def backend_factory(request: pytest.FixtureRequest) -> BackendFactory:
     once per backend in :func:`_backend_params`.
     """
     factory: BackendFactory = request.param
+    return factory
+
+
+# ---------------------------------------------------------------------------
+# Failing-load fixture (invariant I5)
+# ---------------------------------------------------------------------------
+
+
+def _failing_fake_factory(failure: BaseException) -> WhisperBackend:
+    return FakeBackend(load_failure=failure)
+
+
+def _failing_faster_factory(failure: BaseException) -> WhisperBackend:
+    """Return a faster-whisper backend whose ``_build_model`` raises ``failure``.
+
+    Uses the same override seam Tier 1 unit tests use (POD-019). The
+    contract under test is the wrap inside :meth:`load` that turns any
+    underlying failure into :class:`ModelError`; the seam keeps us off
+    the real network and CTranslate2 chain while still exercising the
+    production ``except Exception`` branch.
+    """
+    from podcast_script.backends.faster import FasterWhisperBackend
+
+    class _FailingFaster(FasterWhisperBackend):
+        def _build_model(self, model: str, device: str) -> object:
+            raise failure
+
+    return _FailingFaster()
+
+
+def _failing_mlx_factory(failure: BaseException) -> WhisperBackend:
+    """Mirror of ``_failing_faster_factory`` for the mlx backend."""
+    from podcast_script.backends.mlx import MlxWhisperBackend
+
+    class _FailingMlx(MlxWhisperBackend):
+        def _build_model(self, model: str, device: str) -> object:
+            raise failure
+
+    return _FailingMlx()
+
+
+def _failing_backend_params() -> list[object]:
+    """Per-backend factories that take a failure exception and yield a
+    backend whose ``load()`` will raise that exception through the
+    underlying seam. Skip-on-ImportError matches :func:`_backend_params`
+    so the matrix shape is identical.
+    """
+    params: list[object] = [
+        pytest.param(_failing_fake_factory, id="fake-whisper"),
+    ]
+    if importlib.util.find_spec("faster_whisper") is not None:
+        params.append(pytest.param(_failing_faster_factory, id="faster-whisper"))
+    else:
+        params.append(
+            pytest.param(
+                _failing_faster_factory,
+                id="faster-whisper",
+                marks=pytest.mark.skip(reason="faster_whisper not importable"),
+            )
+        )
+    if importlib.util.find_spec("mlx_whisper") is not None:
+        params.append(pytest.param(_failing_mlx_factory, id="mlx-whisper"))
+    else:
+        params.append(
+            pytest.param(
+                _failing_mlx_factory,
+                id="mlx-whisper",
+                marks=pytest.mark.skip(reason="mlx_whisper not importable"),
+            )
+        )
+    return params
+
+
+@pytest.fixture(params=_failing_backend_params())
+def failing_backend_factory(request: pytest.FixtureRequest) -> FailingBackendFactory:
+    """Return a callable that builds a backend pre-wired to fail on load.
+
+    The caller passes the failure exception (e.g.
+    ``ConnectionError("boom")`` for AC-US-5.4-shaped scenarios); the
+    factory routes through each backend's load-time seam so the
+    ``except Exception`` wrap inside :meth:`load` is the code path
+    actually exercised. The Tier 2 contract is "every backend
+    surfaces this as :class:`ModelError`, never as the raw exception".
+    """
+    factory: FailingBackendFactory = request.param
     return factory

@@ -33,14 +33,28 @@ class FakeBackend:
         self,
         *,
         canned: Sequence[TranscribedSegment] | None = None,
+        load_failure: BaseException | None = None,
     ) -> None:
         self._canned: tuple[TranscribedSegment, ...] = (
             tuple(canned) if canned is not None else _DEFAULT_CANNED
         )
+        self._load_failure = load_failure
         self._loaded = False
 
     def load(self, model: str, device: str) -> None:
-        del model, device
+        del device
+        if self._loaded:
+            return
+        if self._load_failure is not None:
+            failure = self._load_failure
+            try:
+                raise failure
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except Exception as e:
+                raise ModelError(
+                    f"Failed to load fake-whisper model '{model}': {type(e).__name__}: {e}"
+                ) from e
         self._loaded = True
 
     def transcribe(

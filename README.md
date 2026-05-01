@@ -340,16 +340,20 @@ The project follows a three-tier test strategy (ADR-0017):
 - **Tier 1 — unit + fakes.** Pure logic exercised against in-memory
   fakes; sub-second total. Default `pytest` invocation.
 - **Tier 2 — contract.** `WhisperBackend` Protocol invariants run
-  against both `FakeBackend` AND the real backends (POD-030, in
-  progress). Run alongside Tier 1 when present.
+  against `FakeBackend` AND each real backend (`faster-whisper`,
+  `mlx-whisper`); real-backend parametrisations skip cleanly when
+  their library is not importable. Marked `pytest.mark.contract` so
+  the unit tier stays sub-second; CI runs Tier 2 on the Ubuntu +
+  macOS-14 matrix.
 - **Tier 3 — integration.** Full CLI on `examples/sample.mp3` with
   the real `faster-whisper` `tiny` model. Marked `pytest.mark.slow`
   so the unit tier stays sub-second.
 
 ```sh
-uv run pytest                     # Tier 1 (+ Tier 2 when present), default
+uv run pytest                     # Tier 1 (default — sub-second)
+uv run pytest -m contract         # Tier 2 (real backends on the host)
 uv run pytest -m slow             # Tier 3 (real CLI on examples/sample.mp3)
-uv run pytest -m "slow or not slow"   # everything (CI does this)
+uv run pytest -m "contract or slow or not slow"   # everything (CI does this)
 
 uv run ruff check .               # lint
 uv run ruff format --check .      # format

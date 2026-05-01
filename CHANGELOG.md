@@ -176,6 +176,29 @@ major-version bump per SemVer.
   light; `hypothesis` and `pytest-cov` are dev-only, so the
   ADR-0011 lazy-import boundary and ADR-0013 no-new-runtime-deps
   invariants are unaffected (PR #28 / POD-032).
+- Tier 2 contract tests under `tests/contract/` asserting the
+  `WhisperBackend` Protocol invariants identically against
+  `FakeBackend` plus each importable real backend
+  (`FasterWhisperBackend` / `MlxWhisperBackend`) per ADR-0017 —
+  empty-PCM yields empty Iterable, silence input does not raise,
+  yielded `TranscribedSegment.start` values are non-decreasing,
+  `transcribe()` is repeatable on a single instance after one
+  `load()`, and underlying load failures wrap as `ModelError`
+  (with `KeyboardInterrupt` propagating untouched per ADR-0014).
+  R-14 mitigation: a synthetic-cache-miss latency contract test
+  asserts the locked `event=model_download` notice fires within
+  1 s of `load()` entry AND before the slow build path (the
+  ordering check is what makes the contract load-bearing — the
+  formal 1-s budget alone misses a notice-after-build regression).
+  Real backends use the `_build_model` override seam (matching
+  POD-019 / POD-020 / POD-021's Tier 1 pattern) to keep the suite
+  network-free; reusable `FakeBackend` lives at `tests/fakes/whisper.py`.
+  Mutation-tested locally — every invariant catches a distinct
+  regression class without false positives on the others. Marked
+  `pytest.mark.contract` (excluded from the default suite; opt in
+  via `pytest -m contract`); a discrete CI step runs the contract
+  tier on the Ubuntu + macOS-14 matrix per ADR-0017 (PR #TBD /
+  POD-030).
 - NFR-8 100% line-coverage gate on the segment-merge module as a
   discrete CI step running `pytest --cov=podcast_script.segment
   --cov-fail-under=100` against the unit tier. The TF-only

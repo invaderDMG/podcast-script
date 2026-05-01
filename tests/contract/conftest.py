@@ -26,6 +26,7 @@ from tests.fakes.whisper import FakeBackend
 
 BackendFactory = Callable[[], WhisperBackend]
 FailingBackendFactory = Callable[[BaseException], WhisperBackend]
+CacheMissBackendFactory = Callable[[float], WhisperBackend]
 
 _FASTER_TINY_MODEL = "tiny"
 # mlx-whisper expects a full HF repo ID — bare ``"tiny"`` 404s. The
@@ -206,4 +207,99 @@ def failing_backend_factory(request: pytest.FixtureRequest) -> FailingBackendFac
     surfaces this as :class:`ModelError`, never as the raw exception".
     """
     factory: FailingBackendFactory = request.param
+    return factory
+
+
+# ---------------------------------------------------------------------------
+# Synthetic cache-miss fixture (R-14 — first-run notice within 1 s)
+# ---------------------------------------------------------------------------
+
+
+def _cache_miss_fake_factory(build_delay_s: float) -> WhisperBackend:
+    return FakeBackend(cache_miss=True, load_delay_s=build_delay_s)
+
+
+def _cache_miss_faster_factory(build_delay_s: float) -> WhisperBackend:
+    """faster-whisper backend with synthetic cache miss + slow build.
+
+    Overrides ``_is_cached`` to ``False`` (forces the notice path) and
+    inserts ``build_delay_s`` of sleep inside ``_build_model`` so the
+    R-14 contract test can verify the notice fires BEFORE the slow
+    network/disk path — the production code path is the same wrap +
+    helper-call ordering inside :meth:`load`.
+    """
+    import time as _time
+
+    from podcast_script.backends.faster import FasterWhisperBackend
+
+    class _CacheMissFaster(FasterWhisperBackend):
+        def _is_cached(self, model: str) -> bool:
+            return False
+
+        def _build_model(self, model: str, device: str) -> object:
+            if build_delay_s > 0:
+                _time.sleep(build_delay_s)
+            return object()
+
+    return _CacheMissFaster()
+
+
+def _cache_miss_mlx_factory(build_delay_s: float) -> WhisperBackend:
+    """Mirror of ``_cache_miss_faster_factory`` for the mlx backend."""
+    import time as _time
+
+    from podcast_script.backends.mlx import MlxWhisperBackend
+
+    class _CacheMissMlx(MlxWhisperBackend):
+        def _is_cached(self, model: str) -> bool:
+            return False
+
+        def _build_model(self, model: str, device: str) -> object:
+            if build_delay_s > 0:
+                _time.sleep(build_delay_s)
+            return object()
+
+    return _CacheMissMlx()
+
+
+def _cache_miss_backend_params() -> list[object]:
+    params: list[object] = [
+        pytest.param(_cache_miss_fake_factory, id="fake-whisper"),
+    ]
+    if importlib.util.find_spec("faster_whisper") is not None:
+        params.append(pytest.param(_cache_miss_faster_factory, id="faster-whisper"))
+    else:
+        params.append(
+            pytest.param(
+                _cache_miss_faster_factory,
+                id="faster-whisper",
+                marks=pytest.mark.skip(reason="faster_whisper not importable"),
+            )
+        )
+    if importlib.util.find_spec("mlx_whisper") is not None:
+        params.append(pytest.param(_cache_miss_mlx_factory, id="mlx-whisper"))
+    else:
+        params.append(
+            pytest.param(
+                _cache_miss_mlx_factory,
+                id="mlx-whisper",
+                marks=pytest.mark.skip(reason="mlx_whisper not importable"),
+            )
+        )
+    return params
+
+
+@pytest.fixture(params=_cache_miss_backend_params())
+def cache_miss_backend_factory(
+    request: pytest.FixtureRequest,
+) -> CacheMissBackendFactory:
+    """Return a callable that builds a backend with a synthetic cache miss.
+
+    The caller passes a ``build_delay_s`` (seconds) which is the
+    artificial delay inserted inside ``_build_model`` to simulate a
+    slow HF download. The R-14 contract test passes a delay long
+    enough to demonstrate the notice fires BEFORE the slow part —
+    short enough to keep the suite quick.
+    """
+    factory: CacheMissBackendFactory = request.param
     return factory

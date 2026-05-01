@@ -10,13 +10,20 @@ test-only fake and any future reimplementation.
 
 from __future__ import annotations
 
+import logging
+import time
 from collections.abc import Iterator, Sequence
 
 import numpy as np
 import numpy.typing as npt
 
-from podcast_script.backends.base import TranscribedSegment
+from podcast_script.backends.base import (
+    TranscribedSegment,
+    emit_first_run_notice_if_missing,
+)
 from podcast_script.errors import ModelError
+
+_log = logging.getLogger(__name__)
 
 _DEFAULT_CANNED: tuple[TranscribedSegment, ...] = (
     TranscribedSegment(start=0.0, end=1.5, text="hola"),
@@ -34,17 +41,27 @@ class FakeBackend:
         *,
         canned: Sequence[TranscribedSegment] | None = None,
         load_failure: BaseException | None = None,
+        cache_miss: bool = False,
+        load_delay_s: float = 0.0,
     ) -> None:
         self._canned: tuple[TranscribedSegment, ...] = (
             tuple(canned) if canned is not None else _DEFAULT_CANNED
         )
         self._load_failure = load_failure
+        self._cache_miss = cache_miss
+        self._load_delay_s = load_delay_s
         self._loaded = False
 
     def load(self, model: str, device: str) -> None:
         del device
         if self._loaded:
             return
+        if self._cache_miss:
+            emit_first_run_notice_if_missing(
+                model,
+                is_cached=lambda _m: False,
+                logger=_log,
+            )
         if self._load_failure is not None:
             failure = self._load_failure
             try:
@@ -55,6 +72,8 @@ class FakeBackend:
                 raise ModelError(
                     f"Failed to load fake-whisper model '{model}': {type(e).__name__}: {e}"
                 ) from e
+        if self._load_delay_s > 0:
+            time.sleep(self._load_delay_s)
         self._loaded = True
 
     def transcribe(

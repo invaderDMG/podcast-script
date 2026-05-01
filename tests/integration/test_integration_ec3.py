@@ -39,7 +39,7 @@ from podcast_script.cli import app
 
 pytestmark = pytest.mark.slow
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SAMPLE_MP3 = REPO_ROOT / "examples" / "sample.mp3"
 
 _EC3_INPUT_DIR_NAME = "carpeta con espacios"

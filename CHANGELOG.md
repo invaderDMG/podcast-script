@@ -215,6 +215,22 @@ major-version bump per SemVer.
   `segment.py`; `HF_HUB_VERBOSITY=error` set at backend module
   load for cold-cache HF auth notice (PR #18).
 
+### Changed
+
+- Test tree split by tier per ADR-0017 §3.1. The 16 Tier 1 test
+  modules now live under `tests/unit/`; the three Tier 3 test modules
+  live under `tests/integration/`; `tests/contract/` is unchanged.
+  `pytest tests/unit` selects exactly Tier 1 by path (no marker
+  negation needed); `pytest tests/integration -m "slow or not slow"`
+  selects Tier 3. Default suite count + outcomes byte-identical to
+  pre-reorg (252 / 21 / 5 across the three tiers). NFR-8
+  segment-merge coverage gate in `.github/workflows/ci.yml`
+  repointed to `tests/unit/test_segment{,_property}.py`. Three Tier 3
+  modules' `REPO_ROOT` constants gained one extra `.parent` to
+  preserve the path-up traversal across the deeper directory; without
+  that fix the slow tier would have skipped silently rather than run
+  (PR #30 / POD-029).
+
 ### Maintainer runbook
 
 - **After a `large-v3` model bump** — when a Dependabot PR upgrades

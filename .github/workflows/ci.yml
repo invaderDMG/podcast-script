@@ -63,7 +63,7 @@ jobs:
             --cov=podcast_script.segment \
             --cov-report=term-missing \
             --cov-fail-under=100 \
-            tests/test_segment.py tests/test_segment_property.py
+            tests/unit/test_segment.py tests/unit/test_segment_property.py
 
       - name: Tests (Tier 2 / contract)
         # ADR-0017 mandates Tier 2 on every PR + push, matrix Ubuntu +

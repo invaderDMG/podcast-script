@@ -41,6 +41,12 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.10",
     "pytest>=8.0",
+    # POD-032 — property tests for the segment-merge module (NFR-3 / NFR-4)
+    # plus the NFR-8 100% line-coverage gate. Both are dev-only, so the
+    # ADR-0011 lazy-import boundary and ADR-0013 no-new-runtime-deps
+    # invariants are unaffected.
+    "hypothesis>=6.100",
+    "pytest-cov>=5.0",
 ]
 
 [tool.ruff]

@@ -247,7 +247,7 @@ major-version bump per SemVer.
     promotes "vuln but no upstream patch yet" from a warning to a
     workflow failure so the Monday-morning email surfaces it. No
     new dev dep — pip-audit runs in `uvx`'s isolated venv per
-    ADR-0013 (PR #TBD / POD-005).
+    ADR-0013 (PR #33 / POD-005).
 
 ### Changed
 

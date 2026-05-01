@@ -49,12 +49,14 @@ class FakeBackend:
         lang: str,
         sample_rate: int = 16000,
     ) -> Iterator[TranscribedSegment]:
-        del pcm, lang, sample_rate
+        del lang, sample_rate
         if not self._loaded:
             raise ModelError(
                 "FakeBackend.transcribe() called before load(); "
                 "the orchestrator must call load() first per ADR-0009."
             )
+        if pcm.size == 0:
+            return iter(())
         return iter(self._canned)
 
 

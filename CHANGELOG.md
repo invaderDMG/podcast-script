@@ -164,6 +164,26 @@ major-version bump per SemVer.
   quoted-value branch, and that no `.tmp` debris survives the
   atomic write (ADR-0005) on a non-ASCII output parent (PR #27 /
   POD-028).
+- Hypothesis property tests for the segment-merge module
+  (`_normalize_to_segments` / `to_jsonl` / `Segment` in
+  `src/podcast_script/segment.py`) covering NFR-3 ordering
+  (AC-US-2.3), NFR-4 segmenter coverage (AC-US-2.5), the
+  four-token output vocabulary, strictly-positive segment length,
+  `to_jsonl` round-trip on each segment, and `Segment` frozen-ness.
+  Mutation-tested locally: dropping the defensive sort in
+  `_normalize_to_segments` fails 6/7 of the new properties.
+  ADR-0017 §"Property-based testing throughout" was the green
+  light; `hypothesis` and `pytest-cov` are dev-only, so the
+  ADR-0011 lazy-import boundary and ADR-0013 no-new-runtime-deps
+  invariants are unaffected (PR #TBD / POD-032).
+- NFR-8 100% line-coverage gate on the segment-merge module as a
+  discrete CI step running `pytest --cov=podcast_script.segment
+  --cov-fail-under=100` against the unit tier. The TF-only
+  lazy-import paths inside `InaSpeechSegmenter` carry
+  `# pragma: no cover` per ADR-0011 — production execution
+  requires TensorFlow + pyannote, which is the contract surface
+  Tier 2 contract tests cover (POD-030) when run with the heavy
+  deps installed (PR #TBD / POD-032).
 - GitHub Actions Ubuntu + macOS-14 matrix on every push / PR per
   brief §9; the slow tier opts in via `pytest -m slow`
   (PR #6 / POD-004; slow-tier step added in PR #17).

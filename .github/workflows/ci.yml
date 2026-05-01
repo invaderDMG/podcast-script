@@ -48,6 +48,23 @@ jobs:
       - name: Tests (pytest)
         run: uv run pytest
 
+      - name: Coverage gate — segment-merge module (NFR-8 100% lines)
+        # NFR-8 mandates 100% line coverage on the segment-merge module.
+        # The TF-only lazy-import paths inside ``InaSpeechSegmenter``
+        # carry ``# pragma: no cover`` per ADR-0011 — production
+        # execution requires TensorFlow + pyannote, which is the
+        # contract surface Tier 2 contract tests cover (POD-030) when
+        # run with the heavy deps installed. The merge logic
+        # (``_normalize_to_segments`` / ``to_jsonl`` / ``Segment``) is
+        # what NFR-8 actually targets, and the pragma-aware gate below
+        # holds it to 100%.
+        run: |
+          uv run pytest \
+            --cov=podcast_script.segment \
+            --cov-report=term-missing \
+            --cov-fail-under=100 \
+            tests/test_segment.py tests/test_segment_property.py
+
       - name: Tests (Tier 3 / slow integration)
         # ADR-0017 mandates Tier 3 on every PR + push, matrix Ubuntu +
         # macOS. The default suite excludes ``slow`` (sub-second feedback

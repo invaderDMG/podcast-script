@@ -73,6 +73,22 @@ files = ["src", "tests"]
 module = ["mlx_whisper", "mlx_whisper.*"]
 ignore_missing_imports = true
 
+[tool.coverage.run]
+branch = false
+source = ["src/podcast_script"]
+
+[tool.coverage.report]
+# Standard exclusions on top of the explicit ``# pragma: no cover``
+# annotations the source carries. ``if TYPE_CHECKING:`` blocks are
+# documentation surfaces (typing-only Protocols, structural
+# placeholders) — never reached at runtime.
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "\\.\\.\\.",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = ["-ra", "--strict-markers", "--strict-config", "-m", "not slow"]

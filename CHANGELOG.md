@@ -197,7 +197,7 @@ major-version bump per SemVer.
   regression class without false positives on the others. Marked
   `pytest.mark.contract` (excluded from the default suite; opt in
   via `pytest -m contract`); a discrete CI step runs the contract
-  tier on the Ubuntu + macOS-14 matrix per ADR-0017 (PR #TBD /
+  tier on the Ubuntu + macOS-14 matrix per ADR-0017 (PR #29 /
   POD-030).
 - NFR-8 100% line-coverage gate on the segment-merge module as a
   discrete CI step running `pytest --cov=podcast_script.segment

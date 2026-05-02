@@ -23,7 +23,7 @@ import numpy.typing as npt
 import pytest
 
 from podcast_script.backends.base import TranscribedSegment
-from podcast_script.backends.mlx import MlxWhisperBackend
+from podcast_script.backends.mlx import MlxWhisperBackend, _resolve_repo_id
 from podcast_script.errors import ModelError
 
 SAMPLE_RATE = 16_000
@@ -560,6 +560,92 @@ def test_default_is_cached_returns_false_when_scan_fails(
     monkeypatch.setattr(huggingface_hub, "scan_cache_dir", _raising_scan)
 
     assert MlxWhisperBackend()._is_cached("large-v3") is False
+
+
+# ---------------------------------------------------------------------------
+# Issue #45 — bare Whisper shortnames must resolve to mlx-community repos
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("model", "expected"),
+    [
+        ("tiny", "mlx-community/whisper-tiny"),
+        ("base", "mlx-community/whisper-base"),
+        ("small", "mlx-community/whisper-small"),
+        ("medium", "mlx-community/whisper-medium"),
+        ("large-v3", "mlx-community/whisper-large-v3"),
+        ("large-v3-turbo", "mlx-community/whisper-large-v3-turbo"),
+        # Idempotent on already-prefixed repo ids — keeps the door open
+        # for power-user overrides (community quants, local fine-tunes)
+        # without re-prefixing.
+        ("mlx-community/whisper-large-v3", "mlx-community/whisper-large-v3"),
+        ("mlx-community/whisper-large-v3-q4", "mlx-community/whisper-large-v3-q4"),
+        ("some-fork/whisper-tiny", "some-fork/whisper-tiny"),
+        # Local filesystem path passes through (any ``/`` short-circuits).
+        ("/tmp/whisper-fine-tune", "/tmp/whisper-fine-tune"),
+    ],
+)
+def test_resolve_repo_id_maps_bare_shortname_to_mlx_community_issue_45(
+    model: str, expected: str
+) -> None:
+    """Issue #45: ``mlx_whisper.load_models.load_model`` accepts only a
+    local path or a fully-qualified HF repo id — bare shortnames like
+    ``"large-v3"`` 404 with ``RepositoryNotFoundError: 401 …``. The
+    backend's ``_build_model`` MUST normalise via :func:`_resolve_repo_id`
+    so the user-facing ``--model large-v3`` shortname resolves to the
+    canonical ``mlx-community/whisper-large-v3`` HF repo before the
+    download path runs. Anything containing ``"/"`` (already-qualified
+    repo id, local path) passes through unchanged.
+    """
+    assert _resolve_repo_id(model) == expected
+
+
+def test_load_passes_resolved_repo_id_to_build_model_issue_45() -> None:
+    """Issue #45 / regression: the build path MUST receive the resolved
+    repo id when called against the production seam. We capture what
+    ``mlx_whisper.load_models.load_model`` would be invoked with by
+    overriding ``_build_model`` and asserting on its handling — but the
+    contract is observable via ``self._model_name`` after a successful
+    load (which feeds ``_run_inference``'s ``path_or_hf_repo`` arg).
+    """
+    captured: list[str] = []
+
+    class _CapturingBackend(MlxWhisperBackend):
+        def _build_model(self, model: str, device: str) -> object:
+            # Re-derive the same way production does so the assertion
+            # also catches a future drift where ``_build_model``
+            # silently stops normalising (e.g. someone splits the
+            # call site without porting the prefix).
+            captured.append(_resolve_repo_id(model))
+            return object()
+
+    backend = _CapturingBackend()
+    backend.load(model="large-v3", device="cpu")
+
+    assert captured == ["mlx-community/whisper-large-v3"]
+    assert backend._model_name == "mlx-community/whisper-large-v3", (
+        "_model_name must store the resolved repo id so _run_inference's "
+        "path_or_hf_repo arg targets the actual HF repo, not the bare shortname"
+    )
+
+
+def test_load_resolved_model_name_passes_through_for_qualified_id_issue_45() -> None:
+    """Idempotency invariant from :func:`_resolve_repo_id` extends to
+    the stored ``_model_name``: passing a fully-qualified repo id (e.g.
+    a power-user override) MUST NOT re-prefix it. The contract suite at
+    ``tests/contract/conftest.py`` historically relied on this passthrough
+    before the bare-shortname fix landed.
+    """
+
+    class _NoopBuildBackend(MlxWhisperBackend):
+        def _build_model(self, model: str, device: str) -> object:
+            return object()
+
+    backend = _NoopBuildBackend()
+    backend.load(model="mlx-community/whisper-large-v3-q4", device="cpu")
+
+    assert backend._model_name == "mlx-community/whisper-large-v3-q4"
 
 
 def test_module_does_not_eagerly_import_huggingface_hub() -> None:

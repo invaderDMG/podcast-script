@@ -168,10 +168,23 @@ class FasterWhisperBackend:
         delegates model resolution + cache lookup + first-run download to
         ``WhisperModel.__init__`` (which uses ``huggingface_hub`` under
         the hood).
+
+        ``compute_type="auto"`` lets CTranslate2 pick the most efficient
+        compute type the target device natively supports (``int8`` on
+        CPU, ``float16`` on CUDA, etc.) rather than the lib default
+        ``"default"``, which infers the compute type from the saved
+        model weights and emits a noisy ``[ctranslate2] [warning] The
+        compute type inferred from the saved model is float16, but the
+        target device or backend does not support efficient float16
+        computation`` line on every load when the saved type cannot be
+        executed natively (e.g. the canonical Systran float16 weights on
+        macOS arm64 CPU). The warning is purely informational — CT2
+        falls back transparently — but it slips past the logfmt-only
+        promise (NFR-10) onto stderr from the C++ layer (issue #44).
         """
         from faster_whisper import WhisperModel  # type: ignore[import-untyped]
 
-        return WhisperModel(model, device=device)
+        return WhisperModel(model, device=device, compute_type="auto")
 
     def transcribe(
         self,

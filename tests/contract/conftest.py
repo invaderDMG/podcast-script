@@ -29,11 +29,13 @@ FailingBackendFactory = Callable[[BaseException], WhisperBackend]
 CacheMissBackendFactory = Callable[[float], WhisperBackend]
 
 _FASTER_TINY_MODEL = "tiny"
-# mlx-whisper expects a full HF repo ID — bare ``"tiny"`` 404s. The
-# sibling ``_is_cached`` anchors on the ``/whisper-{model}`` convention
-# but ``_build_model`` does not normalise; tracked as a follow-up in
-# .task/POD-030.md (out of POD-030 scope; this is a US-5 bug).
-_MLX_TINY_MODEL = "mlx-community/whisper-tiny"
+# Bare shortname is now valid on both backends — issue #45 fixed in
+# ``MlxWhisperBackend._build_model`` via ``_resolve_repo_id`` which
+# prefixes ``mlx-community/whisper-`` before delegating to
+# ``mlx_whisper.load_models.load_model``. Aligns the model arg with
+# ``_is_cached``'s ``/whisper-{model}`` anchor so cache lookup and
+# download-resolve agree on the same shortname.
+_MLX_TINY_MODEL = "tiny"
 _REAL_DEVICE = "cpu"
 
 

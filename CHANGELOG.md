@@ -33,7 +33,44 @@ major-version bump per SemVer.
 
 ## [Unreleased]
 
-_(no entries yet — post-v0.1.1 work lands here.)_
+### Fixed
+
+- **Issue #45** — `MlxWhisperBackend._build_model` now resolves bare
+  Whisper shortnames (`tiny`, `base`, `small`, `medium`, `large-v3`,
+  `large-v3-turbo`) to their canonical `mlx-community/whisper-<shortname>`
+  HuggingFace repo id before delegating to
+  `mlx_whisper.load_models.load_model`. Previously the bare shortname
+  was passed verbatim, causing `RepositoryNotFoundError: 401 Client
+  Error … Repository Not Found for url:
+  https://huggingface.co/api/models/large-v3/revision/main` on every
+  fresh-cache mlx run with `--model large-v3` (the dogfooder default).
+  The new `_resolve_repo_id` helper is idempotent on already-qualified
+  repo ids and local filesystem paths, so power-user overrides
+  (`--model mlx-community/whisper-large-v3-q4`, `--model /path/to/local`)
+  pass through unchanged. Aligns with `_is_cached`'s `/whisper-{model}`
+  anchor so cache lookup and download-resolve agree on the same
+  shortname (`src/podcast_script/backends/mlx.py`).
+- **Issue #44** — `FasterWhisperBackend` constructs `WhisperModel` with
+  `compute_type="auto"` instead of the lib default `"default"`. With
+  `"default"`, CTranslate2 inferred the compute type from the saved
+  Systran weights (`float16`), then fell back transparently to a
+  device-supported type AND emitted `[ctranslate2] [warning] The
+  compute type inferred from the saved model is float16, but the
+  target device or backend does not support efficient float16
+  computation` directly to stderr from the C++ layer — slipping past
+  the logfmt-only NFR-10 promise on every macOS arm64 CPU run.
+  `"auto"` skips the inference step entirely and picks the most
+  efficient natively-supported type (typically `int8` on CPU,
+  `float16` on CUDA), eliminating the warning without changing
+  transcription quality (`src/podcast_script/backends/faster.py`).
+
+### Changed
+
+- `tests/contract/conftest.py` now passes the bare `"tiny"` shortname
+  to `MlxWhisperBackend.load(...)` (matching the faster-whisper
+  sibling) — the workaround constant `_MLX_TINY_MODEL =
+  "mlx-community/whisper-tiny"` and its tracking comment are gone now
+  that issue #45 is fixed.
 
 ## [0.1.1] - 2026-05-02
 

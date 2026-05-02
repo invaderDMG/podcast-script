@@ -14,6 +14,7 @@ from __future__ import annotations
 import importlib
 import logging
 import sys
+import types
 from collections.abc import Iterable, Iterator
 from typing import Any
 
@@ -542,6 +543,53 @@ def test_default_is_cached_returns_false_when_scan_fails(
     monkeypatch.setattr(huggingface_hub, "scan_cache_dir", _raising_scan)
 
     assert FasterWhisperBackend()._is_cached("large-v3") is False
+
+
+# ---------------------------------------------------------------------------
+# Issue #44 — silence the ctranslate2 inferred-compute-type warning
+# ---------------------------------------------------------------------------
+
+
+def test_build_model_passes_compute_type_auto_to_whisper_model_issue_44(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Issue #44: ``faster_whisper.WhisperModel(...)``'s default
+    ``compute_type="default"`` instructs CTranslate2 to use the saved
+    model's compute type (``float16`` on the canonical Systran weights).
+    On a target the device cannot natively execute that on (e.g. macOS
+    arm64 CPU), CT2 falls back to a supported type AND emits the
+    ``[ctranslate2] [warning] The compute type inferred from the saved
+    model is float16, but the target device or backend does not support
+    efficient float16 computation`` line directly to stderr from the C++
+    layer — slipping past the logfmt-only NFR-10 promise.
+
+    Passing ``compute_type="auto"`` makes CT2 pick the most efficient
+    natively-supported type for the device without consulting the saved
+    type, eliminating the fallback warning. Asserts the kwarg reaches
+    the lib constructor verbatim.
+    """
+    captured: dict[str, Any] = {}
+
+    class _FakeWhisperModel:
+        def __init__(self, model: str, **kwargs: Any) -> None:
+            captured["model"] = model
+            captured.update(kwargs)
+
+    fake_module = types.ModuleType("faster_whisper")
+    fake_module.WhisperModel = _FakeWhisperModel  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "faster_whisper", fake_module)
+
+    backend = FasterWhisperBackend()
+    backend.load(model="tiny", device="cpu")
+
+    assert captured["model"] == "tiny"
+    assert captured["device"] == "cpu"
+    assert captured["compute_type"] == "auto", (
+        "Issue #44: WhisperModel must be constructed with "
+        "compute_type='auto' to silence the CT2 inferred-type fallback "
+        "warning on devices that don't natively support the saved "
+        "model's compute type"
+    )
 
 
 def test_module_does_not_eagerly_import_huggingface_hub() -> None:

@@ -33,7 +33,76 @@ major-version bump per SemVer.
 
 ## [Unreleased]
 
-_(no entries yet — post-v0.1.3 work lands here.)_
+_(no entries yet — post-v1.0.0 work lands here.)_
+
+## [1.0.0] - 2026-05-02
+
+**First tagged release whose CI passes against the SRS per
+`SRS.md` §16.1.** With this tag, the five §16.1 contracts are
+SemVer-major locked — every change to the output Markdown shape
+(English music markers, `MM:SS` / `HH:MM:SS`), the eight-code
+`--lang` set, the NFR-9 exit-code policy (0..6), the NFR-10
+logfmt format + 22-token event catalogue, or the §9.1 CLI
+grammar (flag set + short aliases `-o` / `-f` / `-v` / `-q`)
+becomes a breaking change requiring a major bump per SemVer
+2.0.0 §4.
+
+POD-040 (`git tag v1.0.0` + GitHub Release per
+`PROJECT_PLAN.md:235`) is the last cross-cutting deliverable in
+SP-8 and closes M-8 — the project plan's terminal milestone. The
+Q7 (c) dogfooder acceptance bar (`PROJECT_PLAN.md` §8 — at least
+one external dogfooder ran the README quickstart end-to-end
+without help, before the v1.0.0 tag) flipped on 2026-05-02; with
+no further preconditions remaining, the v0.1.3 → v1.0.0 cut is a
+release-prep diff (version bump + CHANGELOG promotion + SP-8
+close-out + README dogfooder-pointer reframe), no source / test
+changes.
+
+The dogfooder phase ends here. From v1.0.0 onward the project
+enters the SP-8-onward "Public" row from `PROJECT_PLAN.md` §8 —
+anyone who picks up the repo, GitHub Issues triaged at the
+maintainer's cadence. The pre-v1.0.0 dogfooder turn-around
+(four patch tags v0.1.0..v0.1.3 in one calendar day, three
+issues opened by the dogfooders, two of those closed in
+same-day patches: #44 ctranslate2 warning closed in v0.1.2, #45
+mlx-whisper 401 closed in v0.1.3 after the v0.1.2 first-attempt
+fix proved incomplete) is the structural mitigation R-9
+(maintainer-bus-factor) and Q7 were designed to surface — the
+README has provably gotten one external person to a transcript
+without DM support, which is the bar the plan committed to.
+
+### Changed
+
+- README's `## For invited dogfooders` paragraph reframed to
+  `## Reporting issues` — the pre-v1.0.0 dogfooder phase is over
+  per `PROJECT_PLAN.md` §8, so the "invited" framing no longer
+  applies. The new paragraph points at GitHub Issues with an
+  env-block reminder and notes that
+  [`docs/DOGFOODING.md`](https://github.com/invaderDMG/podcast-script/blob/v1.0.0/docs/DOGFOODING.md)
+  remains for historical reference. `docs/DOGFOODING.md` itself
+  is unchanged — its own `## After v1.0.0` section is the
+  in-file disclaimer; the DM template's `v0.1.3` URL is left in
+  place so that historical record stays accurate (the template
+  was used to invite people to test pre-v1.0.0; rewriting it to
+  v1.0.0 would be a contradiction in terms).
+
+### Project plan delivery summary
+
+For the v0.x → v1.0.0 reader landing on this entry: the project
+shipped all 8 user stories from `PROJECT_PLAN.md` §4.1 (US-1
+single-input transcription, US-2 music markers, US-3 progress +
+verbosity, US-4 TOML config, US-5 backend selection + first-run
+notice, US-6 refuse-overwrite + force, US-7 `--debug` artifact
+dir) plus the 28 cross-cutting POD-NNN tasks (POD-001..POD-040
+modulo retired POD-012). The §6 sprint scope is in §1.4 + §6 of
+the plan; per-sprint actuals are listed under
+`### Sprint actuals` below. Final velocity: 62 sub-points over 8
+sprints (8/8/8/8/8/8/8/6) — within the §6 forecast band of 5–8
+sub-pts per sprint.
+
+The 17-entry risk register from `PROJECT_PLAN.md` §10 stands at
+v1.0.0 — see `### Risk-register churn` below for the
+post-cut framing.
 
 ## [0.1.3] - 2026-05-02
 
@@ -586,13 +655,19 @@ SP-1..SP-7 and 5–7 for SP-8 per `PROJECT_PLAN.md` §6.
   round-trip + publishable README) was reachable end-to-end at
   M-7. Dogfooder phase per Q7 still pending — gated on v0.1.0
   tag (POD-039).
-- **SP-8** _(in progress)_ — landed so far: POD-005 Dependabot
-  + pip-audit cron (PR #33), POD-037 ARCHITECTURE.md (PR #37),
-  R-13/R-14/R-17 dep + runner version pins (PR #38), POD-038
-  sprint actuals (this PR). Pending: POD-039 v0.1.0 tag,
-  POD-040 v1.0.0 tag (gated on dogfooder feedback per Q7).
-  Final `velocity_actual` recorded at sprint close, alongside
-  the v1.0.0 tag.
+- **SP-8** velocity_actual=6 — POD-005 Dependabot + pip-audit
+  cron (PR #33), POD-037 ARCHITECTURE.md (PR #37), R-13/R-14/R-17
+  dep + runner version pins (PR #38), POD-038 sprint actuals
+  (PR #39), POD-039 v0.1.0 tag (PR #40), POD-040 v1.0.0 tag +
+  GitHub Release (this PR). Forecast was 5–7 sub-pts per
+  `PROJECT_PLAN.md` §6; actual within range. **M-8 reached.**
+  Out-of-sprint dogfooder turn-around (v0.1.1 patch PR #43,
+  v0.1.2 patch PRs #46/#47 closing #44 + #45 v1, v0.1.3 patch
+  PRs #48/#49 closing #45 v2, plus the dogfooding guide PR #42
+  and Dependabot triage PRs #34/#35/#41) shipped on top of the
+  SP-8 cross-cutting set without rolling into the velocity count
+  — the dogfooder phase was scoped at SP-7 and the patch
+  turn-around is SP-8-overlap delivery, not new sprint work.
 
 ### Schedule slippage
 
@@ -640,6 +715,21 @@ happen.
   shortname additions trip the new `### Maintainer runbook` entry
   rather than landing silently. Same no-projection framing as
   v0.1.1 / v0.1.2; no CI gate change vs. v0.1.2.
+- **v1.0.0 — actual 2026-05-02; projected M-8 / end of SP-8
+  (2026-08-16 per `PROJECT_PLAN.md:328`).** Released ~3.5 months
+  ahead of projection. Same calendar-acceleration cause as v0.1.0:
+  the eight-sprint × two-week projection assumed part-time
+  evening/weekend cadence per §1.3, but actual delivery pace was
+  compressed-day work. The Q7 (c) dogfooder gate (`PROJECT_PLAN.md`
+  §8 — at least one external dogfooder ran the README quickstart
+  end-to-end without help, before the v1.0.0 tag) flipped the
+  same day after the v0.1.3 same-day-turn-around shipped, removing
+  the last gating condition for POD-040. The projection stays as
+  the original baseline per §1.5; this entry is the variance
+  record. With this tag, the dogfooder phase ends and the project
+  enters the SP-8-onward "Public" user-testing row from
+  `PROJECT_PLAN.md` §8 — anyone who picks up the repo, GitHub
+  Issues triaged at the maintainer's cadence.
 
 ### Risk-register churn
 

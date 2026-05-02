@@ -416,11 +416,37 @@ SP-1..SP-7 and 5–7 for SP-8 per `PROJECT_PLAN.md` §6.
 
 The §7 calendar dates in `PROJECT_PLAN.md` are the original
 2026-04-27 baseline projection. Actual tag dates land here as they
-happen (none yet — pre-v0.1.0).
+happen.
+
+- **v0.1.0 — actual 2026-05-02; projected M-7 / end of SP-7
+  (2026-08-02 per `PROJECT_PLAN.md:327`).** Released ahead of
+  schedule; the eight-sprint × two-week projection assumed
+  part-time evening/weekend cadence per §1.3, but actual delivery
+  pace was ~6 calendar days of compressed work. The projection
+  stays as the original baseline per §1.5; this entry is the
+  variance record. v1.0.0 tag (POD-040) is still gated on
+  dogfooder feedback per Q7 — the calendar acceleration does not
+  shorten the human review window.
 
 ### Risk-register churn
 
-No additions, closures, or re-prioritisations since
+No structural additions, closures, or re-prioritisations since
 `PROJECT_PLAN.md` v1.0 (2026-04-26). The 17 entries in §10 stand;
 the headline subset (R-1, R-2, R-6, R-7, R-9) is reviewed at every
 sprint planning per Q11.
+
+Plan-text inconsistencies surfaced during execution (these are
+*documentation* nits, not register changes; recorded here per §1.5
+because the plan is frozen and won't be edited):
+
+- **`PROJECT_PLAN.md:148` POD-005 line reads "(mitigation for SRS
+  T2 / R-1)".** The "T2" attribution is correct (`SRS.md` §11 T2
+  is dependency supply chain). The "R-1" attribution is **not** —
+  R-1 in `PROJECT_PLAN.md` §10 is "TF (via inaSpeechSegmenter) +
+  MLX + faster-whisper combined install on Apple Silicon may
+  conflict", not supply chain. The actual supply-chain risks
+  POD-005 mitigates are upstream of R-1's framing — the
+  Dependabot + pip-audit setup landed in PR #33 maps to SRS T2
+  alone. (Surfaced by self-review on PR #33; deferred to
+  v0.1.0 PR per §1.5 plan-governance — recorded here, not as
+  an edit to PROJECT_PLAN.md.)

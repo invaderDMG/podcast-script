@@ -33,6 +33,22 @@ major-version bump per SemVer.
 
 ## [Unreleased]
 
+_(no entries yet — post-v0.1.2 work lands here.)_
+
+## [0.1.2] - 2026-05-02
+
+Patch release per SemVer 2.0.0 §4. No API changes; delta is the
+single PR (#46) merged between v0.1.1 and v0.1.2 that fixes the two
+first dogfooder reports against v0.1.1: issue #45 (mlx-whisper bare
+shortname 401 against the HF API on every fresh-cache run) and
+issue #44 (CTranslate2 inferred-compute-type warning leaking past
+NFR-10's logfmt-only stderr promise on macOS arm64 CPU). The five
+`SRS.md` §16.1 contracts (output Markdown shape, 8-code `--lang`
+set, exit codes, logfmt format + 22-token catalogue, CLI grammar)
+are byte-identical to v0.1.1. Cut so dogfooders pinning to the
+guide URL get the working tag rather than v0.1.1's broken
+`--model large-v3` path.
+
 ### Fixed
 
 - **Issue #45** — `MlxWhisperBackend._build_model` now resolves bare
@@ -535,6 +551,15 @@ happen.
   (PR #42) + Dependabot triage (#34, #35, #41) into a tag the
   guide URL actually resolves under, since the v0.1.0 tag predates
   the guide commit. No CI gate change vs. v0.1.0.
+- **v0.1.2 — actual 2026-05-02; not projected.** Same-day second
+  patch release after v0.1.1, on the day the dogfooder phase
+  opened. Same no-projection framing as v0.1.1 — the §7 calendar
+  doesn't enumerate patch tags. Cut to ship the two first dogfooder
+  bug fixes (PR #46 — mlx-whisper bare shortname 401 against HF on
+  every fresh-cache run, ctranslate2 inferred-compute-type warning
+  on macOS arm64 CPU) so dogfooders pinning to the guide URL get a
+  working `--model large-v3` path and a clean stderr stream. No CI
+  gate change vs. v0.1.1; same Ubuntu + macOS-14 matrix.
 
 ### Risk-register churn
 

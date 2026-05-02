@@ -372,12 +372,12 @@ The architecture lives in
 
 ## For invited dogfooders
 
-If you've been invited to test `v0.1.1` ahead of the `v1.0.0` cut —
+If you've been invited to test `v0.1.2` ahead of the `v1.0.0` cut —
 welcome, and read [`docs/DOGFOODING.md`](docs/DOGFOODING.md) first.
 It walks through what's being asked (~30–60 minute commitment), the
 Q7 success bar (run the README quickstart on your own audio without
 needing maintainer help), and how to file feedback that actually
-moves the project forward. Pin your clone to the `v0.1.1` tag, not
+moves the project forward. Pin your clone to the `v0.1.2` tag, not
 `main`, so every dogfooder is testing the same surface.
 
 ## License

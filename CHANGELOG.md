@@ -288,14 +288,14 @@ major-version bump per SemVer.
   the cap; major bumps stay individual review per the dependabot
   config landed in PR #33. `inaspeechsegmenter==0.7.6` and
   `numpy>=1.26,<2.0` already had bounds and are unchanged
-  (PR #TBD).
+  (PR #38).
 - CI matrix Ubuntu runner pinned: `ubuntu-latest` →
   `ubuntu-24.04` in `.github/workflows/ci.yml`. R-13-shaped
   Linux-side companion to the existing `macos-14` pin and to
   the `ubuntu-24.04` already in `pip-audit.yml` (PR #33). Both
   pins block the silent-CI-rollover failure mode where a fresh
   GitHub-hosted image lands and breaks an existing build
-  mid-sprint (PR #TBD).
+  mid-sprint (PR #38).
 
 ### Maintainer runbook
 

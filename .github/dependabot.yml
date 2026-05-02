@@ -55,7 +55,20 @@ updates:
       # rejects. inaSpeechSegmenter 0.8.0 fixes that but breaks Apple
       # Silicon — see the `inaspeechsegmenter` ignore below. Drop this
       # ignore once `inaspeechsegmenter` is unpinned.
+      #
+      # Two layers of ignore needed:
+      # - ``versions: [">=2.0"]`` — block any update that would land
+      #   numpy 2.x or newer. Catches both version-update (lockfile
+      #   resolves to 2.x) AND requirement-update (Dependabot proposes
+      #   broadening pyproject.toml's ``<2.0`` cap to ``<3.0`` so the
+      #   latest numpy can resolve, as it did in PR #36 before this
+      #   layer existed).
+      # - ``update-types: version-update:semver-major`` — explicit
+      #   defence-in-depth against any future numpy 1.x → 2.x lockfile
+      #   bump that somehow slips past the ``versions`` filter.
       - dependency-name: numpy
+        versions:
+          - ">=2.0"
         update-types:
           - version-update:semver-major
       # inaspeechsegmenter is pinned at exactly 0.7.6 because 0.8.0

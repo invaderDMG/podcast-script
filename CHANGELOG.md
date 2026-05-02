@@ -338,11 +338,66 @@ major-version bump per SemVer.
 Format per `PROJECT_PLAN.md` §4.3 / §1.4 glossary:
 `velocity_actual=<N>` (integer points completed) per sprint review;
 if the forecast was missed by ≥ 2 points a one-sentence cause
-follows on the same line. Empty until the first formal sprint
-review.
+follows on the same line. Forecast was 8 sub-pts/sprint for
+SP-1..SP-7 and 5–7 for SP-8 per `PROJECT_PLAN.md` §6.
 
-- _(no entries yet — sprint reviews record actuals here as they
-  happen.)_
+- **SP-1** velocity_actual=8 — US-1 partial (POD-001 skeleton,
+  POD-002 errors, POD-003 logging baseline, POD-006 CLI, POD-007
+  decode, POD-009 atomic write) + POD-004 GitHub Actions baseline
+  CI shipped per scope (PR #2..#7 + initial commit `5981e5d`).
+  SPK-1 (TF + MLX + faster-whisper combined install on macOS-14)
+  resolved off-velocity by the CI matrix coming up green on the
+  first run.
+- **SP-2** velocity_actual=8 — US-1 finished (POD-008 Pipeline
+  orchestrator) + US-2 (POD-010 segmenter, POD-011 render) per
+  scope (PR #8..#10).
+- **SP-3** velocity_actual=8 — US-5 partial (POD-018 Protocol,
+  POD-019 faster-whisper, POD-021 first-run notice; PR #11..#12)
+  + POD-029 Tier 1 unit-test baseline (4 of 5 sub-pts; the
+  trimmed 1 sub-pt landed in SP-6 as planned at sprint scoping
+  per `PROJECT_PLAN.md:270`, not slippage). POD-026/POD-027/
+  POD-031 (originally SP-7 scope) also landed early in PR #17 —
+  freed capacity later in the sprint and removed schedule risk
+  from SP-7.
+- **SP-4** velocity_actual=8 — US-5 finished (POD-020 mlx-whisper)
+  + US-4 (POD-016 Config + POD-017 select_backend) + US-6
+  (POD-022 refuse-overwrite + POD-023 force opt-in) + POD-030
+  Tier 2 contract-tests baseline (FakeBackend + Protocol-invariant
+  runner — PR #13..#16; POD-017 + POD-030 baseline rolled into
+  PR #17). macOS-14 CI green from this sprint forward.
+- **SP-5** velocity_actual=8 — US-3 (POD-013 progress bar +
+  POD-014 verbosity matrix + POD-015 22-token event-catalogue
+  freeze; PR #19..#21) + POD-003' full ADR-0008 wiring (refined
+  in PR #19) + POD-033 logfmt-regex CI assertion (PR #24) +
+  POD-035 PTY/no-PTY harness (PR #26). The full UX surface
+  shipped: rich progress on TTY, line-per-phase on pipe,
+  catalogue frozen.
+- **SP-6** velocity_actual=8 — US-7 (POD-024 `--debug` artefact
+  dir + POD-025 refuse-without-`--force`; PR #22 bundled both)
+  + POD-029 finish (`tests/{unit,integration}/` reorg per ADR-0017
+  §3.1 + the stale-ref docstring follow-up; PR #30 + PR #31)
+  + POD-030 finish (real-backend contract tests + R-14 huggingface
+  1-s latency invariant; PR #29) + POD-032 property tests + 100%
+  segment-merge coverage gate (PR #28) + POD-034 failure-injection
+  Tier 3 (kill-mid-transcribe pins NFR-5 + AC-US-6.3 end-to-end;
+  PR #32). Test pyramid solid; M-6 reached.
+- **SP-7** velocity_actual=8 — POD-036 README (install +
+  quickstart + format + exit-code table + 22-token event
+  catalogue + R-16 differentiator paragraphs; PR #23) + POD-028
+  EC-3 round-trip (`carpeta con espacios/canción de prueba.mp3`
+  end-to-end; PR #27). POD-026/POD-027/POD-031 already shipped
+  early in SP-3's PR #17 — those stayed accounted for under SP-3
+  but the SP-7 deliverable (real fixture + CI-green Markdown
+  round-trip + publishable README) was reachable end-to-end at
+  M-7. Dogfooder phase per Q7 still pending — gated on v0.1.0
+  tag (POD-039).
+- **SP-8** _(in progress)_ — landed so far: POD-005 Dependabot
+  + pip-audit cron (PR #33), POD-037 ARCHITECTURE.md (PR #37),
+  R-13/R-14/R-17 dep + runner version pins (PR #38), POD-038
+  sprint actuals (this PR). Pending: POD-039 v0.1.0 tag,
+  POD-040 v1.0.0 tag (gated on dogfooder feedback per Q7).
+  Final `velocity_actual` recorded at sprint close, alongside
+  the v1.0.0 tag.
 
 ### Schedule slippage
 

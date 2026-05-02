@@ -277,6 +277,25 @@ major-version bump per SemVer.
   preserve the path-up traversal across the deeper directory; without
   that fix the slow tier would have skipped silently rather than run
   (PR #30 / POD-029).
+- Major-version caps on the three open-bound runtime deps in
+  `pyproject.toml` — `faster-whisper>=1.2,<2.0`,
+  `huggingface_hub>=1.12,<2.0`, `mlx-whisper>=0.4,<0.5` (the 0.x
+  one is capped at the next minor since SemVer 0.x treats minors
+  as breakable). Lower bounds bumped to the currently-locked
+  minor so a downstream venv can't silently downgrade below what
+  CI tests against. R-14 / R-17 mitigation — Dependabot's
+  grouped weekly PR brings minor + patch upstream bumps under
+  the cap; major bumps stay individual review per the dependabot
+  config landed in PR #33. `inaspeechsegmenter==0.7.6` and
+  `numpy>=1.26,<2.0` already had bounds and are unchanged
+  (PR #TBD).
+- CI matrix Ubuntu runner pinned: `ubuntu-latest` →
+  `ubuntu-24.04` in `.github/workflows/ci.yml`. R-13-shaped
+  Linux-side companion to the existing `macos-14` pin and to
+  the `ubuntu-24.04` already in `pip-audit.yml` (PR #33). Both
+  pins block the silent-CI-rollover failure mode where a fresh
+  GitHub-hosted image lands and breaks an existing build
+  mid-sprint (PR #TBD).
 
 ### Maintainer runbook
 

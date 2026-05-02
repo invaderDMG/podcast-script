@@ -230,9 +230,8 @@ major-version bump per SemVer.
   the very end of `Pipeline.run`. POSIX-only (Windows skipped);
   marked `pytest.mark.slow`; CI's slow-tier step runs it on the
   Ubuntu + macOS-14 matrix per ADR-0017 (PR #32 / POD-034).
-- Supply-chain hygiene per `PROJECT_BRIEF.md` §16. Two pieces,
-  pairing PR-time + periodic-scan coverage of SRS §15 T2 / R-1
-  (a headline risk):
+- Supply-chain hygiene per `PROJECT_BRIEF.md` §9 + §13. Two pieces,
+  pairing PR-time + periodic-scan coverage of SRS §11 T2:
   - `.github/dependabot.yml` — watches the `pip` ecosystem
     (reads `pyproject.toml` + `uv.lock`) and the `github-actions`
     ecosystem (pinned action references in `.github/workflows/*`).

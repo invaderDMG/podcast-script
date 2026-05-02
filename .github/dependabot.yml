@@ -1,15 +1,14 @@
 # Dependabot configuration — POD-005.
 #
-# Mitigation for SRS §15 T2 ("Dependency supply chain") and PROJECT_PLAN
-# §10 R-1 (a headline risk per §1.5 governance — reviewed at every
-# sprint planning). Pairs with `.github/workflows/pip-audit.yml` to
-# cover both the PR-time path (Dependabot opens an update PR per
-# advisory or upstream release) and the periodic-scan path (pip-audit
-# weekly cron catches advisories that don't trigger an upstream release).
+# Mitigation for SRS §11 T2 ("Dependency supply chain"). Pairs with
+# `.github/workflows/pip-audit.yml` to cover both the PR-time path
+# (Dependabot opens an update PR per advisory or upstream release) and
+# the periodic-scan path (pip-audit weekly cron catches advisories that
+# don't trigger an upstream release).
 #
 # References:
-# - PROJECT_BRIEF.md §16 — supply-chain policy.
-# - PROJECT_PLAN.md §5 (POD-005) + §10 (R-1).
+# - PROJECT_BRIEF.md §9 (CI / supply-chain) + §13 (security & compliance).
+# - PROJECT_PLAN.md §5 (POD-005).
 # - https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 version: 2
 updates:

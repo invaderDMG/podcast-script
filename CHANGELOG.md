@@ -43,8 +43,10 @@ the bundled `examples/sample.mp3` LibriVox + CC0 fixture, and the
 five v1.0 contracts (`SRS.md` §16.1 — output Markdown shape,
 8-code `--lang` set, exit-code policy NFR-9, logfmt log format
 NFR-10 + 22-token event catalogue, CLI grammar §9.1) are all
-shipped. SemVer attaches to those five contracts from this tag
-forward — breaking changes warrant a major-version bump.
+shipped. The five contracts are **first locked in writing** at this
+tag; per the file header above and `SRS.md` §16.1, SemVer-major
+attaches at `v1.0.0`. Until then, contract changes between `0.x`
+releases are minor-bumps under SemVer 2.0.0 §4.
 
 ### Added
 

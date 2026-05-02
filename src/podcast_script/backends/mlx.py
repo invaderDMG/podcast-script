@@ -32,6 +32,30 @@ from .base import TranscribedSegment, emit_first_run_notice_if_missing
 
 _log = logging.getLogger(__name__)
 
+_MLX_COMMUNITY_PREFIX = "mlx-community/whisper-"
+"""Canonical HuggingFace org + repo prefix for the mlx-whisper conversions.
+
+``mlx_whisper.load_models.load_model`` resolves its argument as either a
+local filesystem path or a fully-qualified HF repo id — bare Whisper
+shortnames like ``"large-v3"`` 404 on the HF API. Aligns with
+:meth:`MlxWhisperBackend._is_cached`'s ``/whisper-{model}`` anchor so
+the cache-lookup and download paths agree on which repo backs each
+shortname (issue #45).
+"""
+
+
+def _resolve_repo_id(model: str) -> str:
+    """Map a Whisper shortname (``large-v3``) to its mlx-community repo id.
+
+    Idempotent: a value that already looks like a path or repo id (i.e.
+    contains ``"/"``) passes through unchanged. This keeps the door open
+    for a power-user override (``--model mlx-community/whisper-large-v3-q4``
+    or a local fine-tune path) without re-prefixing.
+    """
+    if "/" in model:
+        return model
+    return f"{_MLX_COMMUNITY_PREFIX}{model}"
+
 
 class _MlxSegment(Protocol):
     """Structural contract for one mlx-whisper segment.
@@ -138,7 +162,10 @@ class MlxWhisperBackend:
             raise ModelError(
                 f"Failed to load mlx-whisper model '{model}': {type(e).__name__}: {e}"
             ) from e
-        self._model_name = model
+        # Store the resolved repo id (not the bare shortname) so
+        # ``_run_inference``'s ``path_or_hf_repo`` lookup hits the same
+        # HF repo ``_build_model`` just resolved — issue #45.
+        self._model_name = _resolve_repo_id(model)
 
     def _is_cached(self, model: str) -> bool:
         """Return ``True`` if an mlx-whisper cache entry for ``model`` exists.
@@ -179,6 +206,12 @@ class MlxWhisperBackend:
         Production code path triggers the lazy ``mlx_whisper`` import
         here and delegates HF cache lookup + first-run download to
         ``mlx_whisper.load_models.load_model``.
+
+        The bare shortname is resolved to the canonical
+        ``mlx-community/whisper-<shortname>`` HF repo id via
+        :func:`_resolve_repo_id` before the lookup — ``load_model``
+        accepts either a local path or a fully-qualified repo id, and a
+        bare shortname like ``"large-v3"`` 404s on the HF API (issue #45).
         """
         # ``mlx_whisper`` is darwin-arm64-only via the PEP 508 marker
         # in ``pyproject.toml``; ``[[tool.mypy.overrides]]`` waives
@@ -186,7 +219,7 @@ class MlxWhisperBackend:
         # platforms (Ubuntu: not installed; macOS: installed, untyped).
         from mlx_whisper.load_models import load_model
 
-        return load_model(model)
+        return load_model(_resolve_repo_id(model))
 
     def transcribe(
         self,

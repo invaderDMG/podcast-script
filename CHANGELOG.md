@@ -142,7 +142,7 @@ major-version bump per SemVer.
   list — that material stays in the individual ADRs under
   `docs/adr/`. 176 lines; the rest of v1 maintainer-facing docs
   surface (README, CHANGELOG, ADRs) is already in place
-  (PR #TBD / POD-037).
+  (PR #37 / POD-037).
 
 #### Test fixtures + quality gates
 

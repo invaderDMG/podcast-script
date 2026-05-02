@@ -33,6 +33,21 @@ major-version bump per SemVer.
 
 ## [Unreleased]
 
+_(no entries yet — post-v0.1.3 work lands here.)_
+
+## [0.1.3] - 2026-05-02
+
+Patch release per SemVer 2.0.0 §4. No API changes; delta is the
+single PR (#48) re-fixing issue #45 — the v0.1.2 fix had used a
+uniform `mlx-community/whisper-{shortname}` prefix rule which still
+404'd on `base`, `small`, `medium`, and `large-v3` (those shortnames
+are only published under the `-mlx` suffix). Reported again by the
+same dogfooder same day. The five `SRS.md` §16.1 contracts (output
+Markdown shape, 8-code `--lang` set, exit codes, logfmt format +
+22-token catalogue, CLI grammar) are byte-identical to v0.1.2. Cut
+so the dogfooder workflow's `--model large-v3` path actually works
+end-to-end before more invitations go out.
+
 ### Fixed
 
 - **Issue #45 (re-fix)** — the v0.1.2 fix used a uniform
@@ -611,6 +626,20 @@ happen.
   on macOS arm64 CPU) so dogfooders pinning to the guide URL get a
   working `--model large-v3` path and a clean stderr stream. No CI
   gate change vs. v0.1.1; same Ubuntu + macOS-14 matrix.
+- **v0.1.3 — actual 2026-05-02; not projected.** Same-day third
+  patch release after v0.1.2, re-fixing issue #45 — the v0.1.2 fix
+  had used a uniform `mlx-community/whisper-{shortname}` prefix
+  rule which still 404'd on `base`, `small`, `medium`, `large-v3`
+  (those shortnames are only published in the mlx-community org
+  under the `-mlx` suffix). The naming asymmetry was not visible
+  to v0.1.2's pre-merge testing: the `tiny`-only end-to-end
+  verification ran against a shortname that does happen to ship
+  under both forms, masking the bug for every other shortname.
+  v0.1.3's tests probe the canonical-repo table directly +
+  parametrize over all six v1-supported shortnames; future
+  shortname additions trip the new `### Maintainer runbook` entry
+  rather than landing silently. Same no-projection framing as
+  v0.1.1 / v0.1.2; no CI gate change vs. v0.1.2.
 
 ### Risk-register churn
 

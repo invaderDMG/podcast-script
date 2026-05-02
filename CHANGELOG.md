@@ -33,6 +33,20 @@ major-version bump per SemVer.
 
 ## [Unreleased]
 
+_(no entries yet — post-v0.1.1 work lands here.)_
+
+## [0.1.1] - 2026-05-02
+
+Patch release per SemVer 2.0.0 §4. No API changes; delta is the
+four PRs merged between v0.1.0 and v0.1.1: dogfooding guide,
+Dependabot action bumps, and Dependabot config tightening to
+prevent the closed PR #36's proposal class from recurring. The
+five `SRS.md` §16.1 contracts (output Markdown shape, 8-code
+`--lang` set, exit codes, logfmt format + 22-token catalogue, CLI
+grammar) are untouched. Cut to give invited dogfooders a real
+pinned tag with `docs/DOGFOODING.md` included — the v0.1.0 tag
+predates the guide.
+
 ### Added
 
 - `docs/DOGFOODING.md` — invitation guide for the v0.1.0 → v1.0.0
@@ -47,6 +61,40 @@ major-version bump per SemVer.
   maintainer can use to invite people. README has a one-paragraph
   pointer between "Development" and "License" so an invited dogfooder
   who lands on the README first finds the guide (PR #42).
+
+### Changed
+
+- `actions/checkout` bumped v4 → v6 in both CI workflows
+  (`.github/workflows/ci.yml`, `.github/workflows/pip-audit.yml`).
+  First Dependabot grouped weekly PR after the v0.1.0 cut; major
+  bump so it landed individually rather than under the
+  `pip`/`actions` minor + patch group per the rules in
+  `.github/dependabot.yml` (PR #34).
+- `astral-sh/setup-uv` bumped v6 → v7 in both CI workflows. Same
+  pathway as `actions/checkout` above; rebased against
+  post-PR-#34/#38 main before merge so the matrix legs ran on
+  `ubuntu-24.04` (not the pre-pin `ubuntu-latest`) (PR #35).
+- Tightened the `numpy` Dependabot ignore in
+  `.github/dependabot.yml`: added `versions: [">=2.0"]` alongside
+  the existing `update-types: version-update:semver-major` filter.
+  The `update-types` filter only catches version-update PRs (i.e.
+  bumping the lockfile from 1.26.x to 2.x); it doesn't catch
+  *requirement-update* PRs (broadening `pyproject.toml`'s
+  `numpy<2.0` cap to `<3.0`) — which Dependabot proposed shortly
+  after v0.1.0 (closed PR #36). The `versions` filter applies to
+  both update modes, making the ignore defence-in-depth. Drop the
+  `versions` line at the same moment `inaspeechsegmenter` unpins
+  to ≥ 0.8.x with Apple Silicon support; the existing
+  `inaspeechsegmenter` ignore tracks the same trigger (PR #41,
+  refs closed PR #36).
+
+### Maintenance
+
+- Closed `PR #36` (Dependabot proposal to broaden `numpy>=1.26,<2.0`
+  to `<3.0`) without merging — the `<2.0` cap is deliberate per
+  `pyproject.toml:14-19` (inaSpeechSegmenter 0.7.6 incompatibility
+  with numpy 2.x). The `numpy` ignore tightening above (PR #41)
+  prevents the same proposal from recurring.
 
 ## [0.1.0] - 2026-05-02
 
@@ -442,6 +490,14 @@ happen.
   variance record. v1.0.0 tag (POD-040) is still gated on
   dogfooder feedback per Q7 — the calendar acceleration does not
   shorten the human review window.
+- **v0.1.1 — actual 2026-05-02; not projected.** Same-day patch
+  release after v0.1.0; the §7 calendar table doesn't enumerate
+  patch tags (only major sprint milestones M-1..M-8), so this is a
+  no-projection variance — recorded for completeness rather than
+  schedule analysis. Cut to bundle the dogfooding guide
+  (PR #42) + Dependabot triage (#34, #35, #41) into a tag the
+  guide URL actually resolves under, since the v0.1.0 tag predates
+  the guide commit. No CI gate change vs. v0.1.0.
 
 ### Risk-register churn
 

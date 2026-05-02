@@ -48,6 +48,40 @@ major-version bump per SemVer.
   pointer between "Development" and "License" so an invited dogfooder
   who lands on the README first finds the guide (PR #42).
 
+### Changed
+
+- `actions/checkout` bumped v4 → v6 in both CI workflows
+  (`.github/workflows/ci.yml`, `.github/workflows/pip-audit.yml`).
+  First Dependabot grouped weekly PR after the v0.1.0 cut; major
+  bump so it landed individually rather than under the
+  `pip`/`actions` minor + patch group per the rules in
+  `.github/dependabot.yml` (PR #34).
+- `astral-sh/setup-uv` bumped v6 → v7 in both CI workflows. Same
+  pathway as `actions/checkout` above; rebased against
+  post-PR-#34/#38 main before merge so the matrix legs ran on
+  `ubuntu-24.04` (not the pre-pin `ubuntu-latest`) (PR #35).
+- Tightened the `numpy` Dependabot ignore in
+  `.github/dependabot.yml`: added `versions: [">=2.0"]` alongside
+  the existing `update-types: version-update:semver-major` filter.
+  The `update-types` filter only catches version-update PRs (i.e.
+  bumping the lockfile from 1.26.x to 2.x); it doesn't catch
+  *requirement-update* PRs (broadening `pyproject.toml`'s
+  `numpy<2.0` cap to `<3.0`) — which Dependabot proposed shortly
+  after v0.1.0 (closed PR #36). The `versions` filter applies to
+  both update modes, making the ignore defence-in-depth. Drop the
+  `versions` line at the same moment `inaspeechsegmenter` unpins
+  to ≥ 0.8.x with Apple Silicon support; the existing
+  `inaspeechsegmenter` ignore tracks the same trigger (PR #41,
+  refs closed PR #36).
+
+### Maintenance
+
+- Closed `PR #36` (Dependabot proposal to broaden `numpy>=1.26,<2.0`
+  to `<3.0`) without merging — the `<2.0` cap is deliberate per
+  `pyproject.toml:14-19` (inaSpeechSegmenter 0.7.6 incompatibility
+  with numpy 2.x). The `numpy` ignore tightening above (PR #41)
+  prevents the same proposal from recurring.
+
 ## [0.1.0] - 2026-05-02
 
 First usable release per `PROJECT_BRIEF.md` §16 — the test pyramid

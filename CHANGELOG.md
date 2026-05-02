@@ -239,14 +239,16 @@ major-version bump per SemVer.
     into one PR per ecosystem so solo-maintainer review stays at
     one weekly window. Major bumps stay individual.
   - `.github/workflows/pip-audit.yml` — weekly cron + manual
-    `workflow_dispatch`. Runs `uv export --no-dev --no-emit-project
-    --no-hashes` to materialise the locked dep set, then
-    `uvx --from pip-audit pip-audit --strict -r requirements.txt`
-    to scan it against the PyPI advisory databases. `--strict`
-    promotes "vuln but no upstream patch yet" from a warning to a
-    workflow failure so the Monday-morning email surfaces it. No
-    new dev dep — pip-audit runs in `uvx`'s isolated venv per
-    ADR-0013 (PR #33 / POD-005).
+    `workflow_dispatch` on a pinned `ubuntu-24.04` runner. Runs
+    `uv export --no-dev --no-emit-project --no-hashes` to materialise
+    the locked dep set, then `uvx --from pip-audit pip-audit --strict
+    -r requirements.txt` to scan it against the PyPI advisory
+    databases. `--strict` fails the run if any dependency can't be
+    *collected* (yanked version, name-resolution failure, transient
+    network glitch) so a partial scan can't pass silently; vuln
+    detection itself is unconditional and exits non-zero on any
+    finding. No new dev dep — pip-audit runs in `uvx`'s isolated
+    venv per ADR-0013 (PR #33 / POD-005).
 
 ### Changed
 

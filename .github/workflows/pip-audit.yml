@@ -21,17 +21,25 @@ on:
   # disclosed CVE without waiting for the next Monday).
   workflow_dispatch:
 
-# Cancelling an in-flight cron run when a workflow_dispatch lands on
-# top is fine — both produce the same artefact and the second one is
-# the more interesting (manual investigation).
+# Cancel in-flight runs when a fresher one lands on top — a
+# workflow_dispatch is usually a maintainer investigating a fresh
+# advisory, and the cron's findings will be the same minutes later
+# regardless. Both runs produce the same audit shape; only the
+# latest one is interesting.
 concurrency:
   group: pip-audit
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   audit:
     name: scan locked deps
-    runs-on: ubuntu-latest
+    # Pinned image (not ``ubuntu-latest``) so a runner-image rollover
+    # can't break the audit silently. Mirrors the ``macos-14`` pin in
+    # ``ci.yml`` (PROJECT_PLAN.md §10 R-13 mitigation, applied
+    # symmetrically to the Linux runner since the same risk shape
+    # applies). Bump deliberately when a new GitHub-hosted Ubuntu
+    # image is desired.
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -66,10 +74,15 @@ jobs:
         # ``uvx --from pip-audit pip-audit`` runs the auditor in an
         # isolated venv without adding it to the project's dev deps —
         # keeps ``pyproject.toml`` minimal per ADR-0013. ``--strict``
-        # promotes the "vuln but no upstream patch" edge-case from a
-        # warning to a failure so it can't be silently ignored.
-        # Specific advisories can be carved out later with
-        # ``--ignore-vuln <PYSEC-ID>`` if they're known-not-applicable.
+        # makes pip-audit fail the audit if any dependency cannot be
+        # *collected* (e.g. a name that doesn't resolve, a yanked
+        # version, a network glitch fetching metadata) — the default
+        # is to skip uncollected deps and exit 0, which would silently
+        # mask a partial scan. The vuln-detection behaviour is
+        # unaffected: pip-audit always exits non-zero on any vuln
+        # found, regardless of ``--strict``. Specific advisories can
+        # be carved out case-by-case with ``--ignore-vuln <PYSEC-ID>``
+        # when known-not-applicable.
         run: |
           uvx --from pip-audit pip-audit \
             --strict \

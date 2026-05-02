@@ -12,7 +12,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-14]
+        # Pinned images (no ``-latest``) so a runner-image rollover can't
+        # break CI silently. ``macos-14`` was already pinned per
+        # PROJECT_PLAN.md §10 R-13 mitigation; ``ubuntu-24.04`` applies
+        # the same risk shape to the Linux runner and mirrors the pin in
+        # ``pip-audit.yml`` (PR #33). Bump both deliberately when a new
+        # GitHub-hosted image is desired.
+        os: [ubuntu-24.04, macos-14]
     steps:
       - name: Checkout
         uses: actions/checkout@v4

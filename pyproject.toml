@@ -7,10 +7,19 @@ authors = [{ name = "Juan García" }]
 license = "MIT"
 license-files = ["LICENSE"]
 dependencies = [
-    "faster-whisper>=1.0",
-    "huggingface_hub>=0.24",
+    # Major-version capped (R-14, R-17 mitigation). Lower bound matches the
+    # current locked minor so a downstream venv can't silently downgrade
+    # below what CI tests against. Dependabot's grouped weekly PR
+    # (.github/dependabot.yml) brings minor + patch bumps under the cap;
+    # major bumps stay individual review per the cap shape.
+    "faster-whisper>=1.2,<2.0",
+    "huggingface_hub>=1.12,<2.0",
     "inaspeechsegmenter==0.7.6",
-    "mlx-whisper>=0.4 ; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    # mlx-whisper is in 0.x — SemVer treats 0.x minors as breakable, so
+    # the symmetric "next breakable bump" cap is <0.5, not <1.0. Tighter
+    # than the >=1.0 deps' major-cap on purpose; loosen to <1.0 once
+    # mlx-whisper crosses 1.0.
+    "mlx-whisper>=0.4,<0.5 ; sys_platform == 'darwin' and platform_machine == 'arm64'",
     # Pinned <2 for inaSpeechSegmenter 0.7.6 compatibility — its 0.7.x
     # branch uses ``np.lib.pad`` (removed in 2.x) and the older positional
     # forms of ``np.stack``/``np.concatenate`` that numpy 2.x rejects.

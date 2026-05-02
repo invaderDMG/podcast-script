@@ -1732,10 +1732,10 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "faster-whisper", specifier = ">=1.0" },
-    { name = "huggingface-hub", specifier = ">=0.24" },
+    { name = "faster-whisper", specifier = ">=1.2,<2.0" },
+    { name = "huggingface-hub", specifier = ">=1.12,<2.0" },
     { name = "inaspeechsegmenter", specifier = "==0.7.6" },
-    { name = "mlx-whisper", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", specifier = ">=0.4" },
+    { name = "mlx-whisper", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", specifier = ">=0.4,<0.5" },
     { name = "numpy", specifier = ">=1.26,<2.0" },
     { name = "rich", specifier = ">=13.7" },
     { name = "tf-keras", specifier = ">=2.18.0" },

@@ -44,6 +44,25 @@ updates:
         update-types:
           - minor
           - patch
+    # Two deliberate version constraints in `pyproject.toml` that
+    # Dependabot would otherwise re-propose every week forever. The
+    # rationale lines in `pyproject.toml` are the authoritative copy;
+    # short summaries here:
+    ignore:
+      # numpy<2 is required because inaSpeechSegmenter 0.7.6's 0.7.x
+      # branch uses `np.lib.pad` (removed in 2.x) and the older
+      # positional forms of `np.stack` / `np.concatenate` that 2.x
+      # rejects. inaSpeechSegmenter 0.8.0 fixes that but breaks Apple
+      # Silicon — see the `inaspeechsegmenter` ignore below. Drop this
+      # ignore once `inaspeechsegmenter` is unpinned.
+      - dependency-name: numpy
+        update-types:
+          - version-update:semver-major
+      # inaspeechsegmenter is pinned at exactly 0.7.6 because 0.8.0
+      # adds `tensorflow[and-cuda]` which breaks Apple Silicon. Drop
+      # this ignore the moment an Apple-Silicon-clean release lands
+      # (revisit on every R-1 / R-17 review per PROJECT_PLAN.md §10).
+      - dependency-name: inaspeechsegmenter
 
   # GitHub Actions dependencies — pinned action references in
   # ``.github/workflows/*.yml``. Cadence + grouping mirrors the Python

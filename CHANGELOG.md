@@ -131,6 +131,18 @@ major-version bump per SemVer.
 - `LICENSE` (MIT) at the repo root; `[project] license = "MIT"` +
   `license-files = ["LICENSE"]` in `pyproject.toml` per PEP 639
   (PR #23 review-fix).
+- `docs/ARCHITECTURE.md` — the maintainer-facing front-door
+  one-pager mandated by SRS §16.2 / Q20. Covers exactly the four
+  load-bearing invariants (segment-then-transcribe pipeline;
+  `WhisperBackend` Protocol + platform-detection rule;
+  segmenter-covers / renderer-drops noise + silence;
+  atomic-write via temp + rename) with each bullet naming the
+  failure mode the choice avoids and pointing at the relevant
+  ADR. No "rejected alternatives" appendix per SRS §1.3 Won't
+  list — that material stays in the individual ADRs under
+  `docs/adr/`. 176 lines; the rest of v1 maintainer-facing docs
+  surface (README, CHANGELOG, ADRs) is already in place
+  (PR #37 / POD-037).
 
 #### Test fixtures + quality gates
 

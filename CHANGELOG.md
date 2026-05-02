@@ -33,7 +33,20 @@ major-version bump per SemVer.
 
 ## [Unreleased]
 
-_(no entries yet — post-v0.1.0 work lands here.)_
+### Added
+
+- `docs/DOGFOODING.md` — invitation guide for the v0.1.0 → v1.0.0
+  dogfooder phase per `PROJECT_PLAN.md` §8 / Q7. Covers prerequisites,
+  step-by-step install + smoke test + run-on-own-audio flow, an
+  evaluation checklist (transcript quality, music markers, output
+  format, UX), GitHub Issues feedback templates (env block + bug-shaped
+  vs. quality-shaped reports), the documented v1 limitations that are
+  *not* bugs (so dogfooders don't burn cycles on EC-1 / model-size /
+  no-batch / atomic-rename-no-partial), the Q7 acceptance bar
+  reflected as pass/fail, and a copy-paste-ready DM template the
+  maintainer can use to invite people. README has a one-paragraph
+  pointer between "Development" and "License" so an invited dogfooder
+  who lands on the README first finds the guide (PR #TBD).
 
 ## [0.1.0] - 2026-05-02
 

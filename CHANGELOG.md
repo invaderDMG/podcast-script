@@ -33,6 +33,19 @@ major-version bump per SemVer.
 
 ## [Unreleased]
 
+_(no entries yet — post-v0.1.0 work lands here.)_
+
+## [0.1.0] - 2026-05-02
+
+First usable release per `PROJECT_BRIEF.md` §16 — the test pyramid
+is green on Ubuntu + macOS-14, the README quickstart works against
+the bundled `examples/sample.mp3` LibriVox + CC0 fixture, and the
+five v1.0 contracts (`SRS.md` §16.1 — output Markdown shape,
+8-code `--lang` set, exit-code policy NFR-9, logfmt log format
+NFR-10 + 22-token event catalogue, CLI grammar §9.1) are all
+shipped. SemVer attaches to those five contracts from this tag
+forward — breaking changes warrant a major-version bump.
+
 ### Added
 
 #### CLI surface

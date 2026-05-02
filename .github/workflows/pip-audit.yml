@@ -1,0 +1,89 @@
+name: pip-audit (weekly)
+
+# Half of POD-005's supply-chain mitigation (the other half lives in
+# .github/dependabot.yml). Catches advisories that don't trigger an
+# upstream release — e.g. a vuln disclosed against a current pinned
+# version, where Dependabot would have nothing to bump *to* yet.
+#
+# Mitigation for SRS §11 T2 ("Dependency supply chain").
+#
+# References:
+#   - PROJECT_BRIEF.md §9 (CI / supply-chain) + §13 (security & compliance).
+#   - PROJECT_PLAN.md §5 (POD-005).
+#   - https://github.com/pypa/pip-audit
+on:
+  schedule:
+    # Monday 06:00 UTC = 07:00 winter / 08:00 summer Europe/Madrid —
+    # off the maintainer's working hours so a Monday-morning failure
+    # notification is the first signal of the work week.
+    - cron: '0 6 * * 1'
+  # Manual dispatch for ad-hoc runs (e.g. investigating a freshly-
+  # disclosed CVE without waiting for the next Monday).
+  workflow_dispatch:
+
+# Cancel in-flight runs when a fresher one lands on top — a
+# workflow_dispatch is usually a maintainer investigating a fresh
+# advisory, and the cron's findings will be the same minutes later
+# regardless. Both runs produce the same audit shape; only the
+# latest one is interesting.
+concurrency:
+  group: pip-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: scan locked deps
+    # Pinned image (not ``ubuntu-latest``) so a runner-image rollover
+    # can't break the audit silently. Mirrors the ``macos-14`` pin in
+    # ``ci.yml`` (PROJECT_PLAN.md §10 R-13 mitigation, applied
+    # symmetrically to the Linux runner since the same risk shape
+    # applies). Bump deliberately when a new GitHub-hosted Ubuntu
+    # image is desired.
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Export locked dep set to requirements.txt
+        # Reads ``uv.lock`` (the source of truth for the resolved dep
+        # graph) and writes a flat ``requirements.txt`` that pip-audit
+        # can consume. ``--no-dev`` excludes dev-only deps (``ruff``,
+        # ``mypy``, ``pytest``, ``hypothesis``, ``pytest-cov``) — they
+        # don't ship with the wheel, so a vuln in any of them isn't a
+        # supply-chain risk to users. ``--no-emit-project`` drops the
+        # local package itself (it has no PyPI presence to audit).
+        # ``--no-hashes`` keeps the file pip-audit-compatible (the
+        # tool reads the version specifier, not the hash).
+        run: |
+          uv export \
+            --format requirements.txt \
+            --no-dev \
+            --no-emit-project \
+            --no-hashes \
+            > requirements.txt
+
+      - name: Run pip-audit
+        # ``uvx --from pip-audit pip-audit`` runs the auditor in an
+        # isolated venv without adding it to the project's dev deps —
+        # keeps ``pyproject.toml`` minimal per ADR-0013. ``--strict``
+        # makes pip-audit fail the audit if any dependency cannot be
+        # *collected* (e.g. a name that doesn't resolve, a yanked
+        # version, a network glitch fetching metadata) — the default
+        # is to skip uncollected deps and exit 0, which would silently
+        # mask a partial scan. The vuln-detection behaviour is
+        # unaffected: pip-audit always exits non-zero on any vuln
+        # found, regardless of ``--strict``. Specific advisories can
+        # be carved out case-by-case with ``--ignore-vuln <PYSEC-ID>``
+        # when known-not-applicable.
+        run: |
+          uvx --from pip-audit pip-audit \
+            --strict \
+            -r requirements.txt

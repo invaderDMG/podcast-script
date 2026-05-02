@@ -230,6 +230,25 @@ major-version bump per SemVer.
   the very end of `Pipeline.run`. POSIX-only (Windows skipped);
   marked `pytest.mark.slow`; CI's slow-tier step runs it on the
   Ubuntu + macOS-14 matrix per ADR-0017 (PR #32 / POD-034).
+- Supply-chain hygiene per `PROJECT_BRIEF.md` §9 + §13. Two pieces,
+  pairing PR-time + periodic-scan coverage of SRS §11 T2:
+  - `.github/dependabot.yml` — watches the `pip` ecosystem
+    (reads `pyproject.toml` + `uv.lock`) and the `github-actions`
+    ecosystem (pinned action references in `.github/workflows/*`).
+    Weekly cadence (Monday 06:00 UTC); minor + patch bumps batched
+    into one PR per ecosystem so solo-maintainer review stays at
+    one weekly window. Major bumps stay individual.
+  - `.github/workflows/pip-audit.yml` — weekly cron + manual
+    `workflow_dispatch` on a pinned `ubuntu-24.04` runner. Runs
+    `uv export --no-dev --no-emit-project --no-hashes` to materialise
+    the locked dep set, then `uvx --from pip-audit pip-audit --strict
+    -r requirements.txt` to scan it against the PyPI advisory
+    databases. `--strict` fails the run if any dependency can't be
+    *collected* (yanked version, name-resolution failure, transient
+    network glitch) so a partial scan can't pass silently; vuln
+    detection itself is unconditional and exits non-zero on any
+    finding. No new dev dep — pip-audit runs in `uvx`'s isolated
+    venv per ADR-0013 (PR #33 / POD-005).
 
 ### Changed
 

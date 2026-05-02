@@ -370,15 +370,18 @@ The architecture lives in
 [`SRS.md`](SRS.md); the sprint plan in
 [`PROJECT_PLAN.md`](PROJECT_PLAN.md).
 
-## For invited dogfooders
+## Reporting issues
 
-If you've been invited to test `v0.1.3` ahead of the `v1.0.0` cut —
-welcome, and read [`docs/DOGFOODING.md`](docs/DOGFOODING.md) first.
-It walks through what's being asked (~30–60 minute commitment), the
-Q7 success bar (run the README quickstart on your own audio without
-needing maintainer help), and how to file feedback that actually
-moves the project forward. Pin your clone to the `v0.1.3` tag, not
-`main`, so every dogfooder is testing the same surface.
+File anything that surprised you on the
+[GitHub Issues tracker](https://github.com/invaderDMG/podcast-script/issues) —
+bugs, install friction, output quality regressions, doc gaps. Please
+include the env block (OS + chip, Python version, `uv` version,
+`ffmpeg` version, project tag) and a copy-pasteable reproduction so
+the report is actionable without a back-and-forth. The pre-v1.0.0
+dogfooder phase is over per `PROJECT_PLAN.md` §8 (the historical
+guide stays at [`docs/DOGFOODING.md`](docs/DOGFOODING.md) for
+reference); from v1.0.0 onward this is a normal open-source backlog
+triaged at the maintainer's cadence.
 
 ## License
 

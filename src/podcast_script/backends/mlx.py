@@ -32,28 +32,69 @@ from .base import TranscribedSegment, emit_first_run_notice_if_missing
 
 _log = logging.getLogger(__name__)
 
-_MLX_COMMUNITY_PREFIX = "mlx-community/whisper-"
-"""Canonical HuggingFace org + repo prefix for the mlx-whisper conversions.
+_CANONICAL_MLX_REPOS: dict[str, str] = {
+    # Verified against `https://huggingface.co/api/models/<repo>` on
+    # 2026-05-02. The mlx-community org applies the ``-mlx`` suffix
+    # asymmetrically — ``tiny`` ships under both `whisper-tiny` and
+    # `whisper-tiny-mlx`, ``large-v3-turbo`` ships only without the
+    # suffix, and the rest are ``-mlx``-only. The v0.1.2 prefix-rule
+    # fix (`mlx-community/whisper-{model}` for every shortname) 404'd
+    # on `base`, `small`, `medium`, `large-v3` because those repos
+    # only exist with the suffix; the inverse rule (always append
+    # `-mlx`) would 404 on `large-v3-turbo`. Explicit table is the
+    # only way the matrix closes (issue #45 v2).
+    #
+    # ``tiny`` deliberately maps to the unsuffixed repo to match the
+    # cache convention seeded by every prior release — flipping it to
+    # ``-mlx`` would re-trigger a download notice for users who
+    # already have ``mlx-community/whisper-tiny`` on disk.
+    "tiny": "mlx-community/whisper-tiny",
+    "base": "mlx-community/whisper-base-mlx",
+    "small": "mlx-community/whisper-small-mlx",
+    "medium": "mlx-community/whisper-medium-mlx",
+    "large-v3": "mlx-community/whisper-large-v3-mlx",
+    "large-v3-turbo": "mlx-community/whisper-large-v3-turbo",
+}
+"""Shortname → canonical ``mlx-community`` HF repo id mapping.
 
-``mlx_whisper.load_models.load_model`` resolves its argument as either a
-local filesystem path or a fully-qualified HF repo id — bare Whisper
-shortnames like ``"large-v3"`` 404 on the HF API. Aligns with
-:meth:`MlxWhisperBackend._is_cached`'s ``/whisper-{model}`` anchor so
-the cache-lookup and download paths agree on which repo backs each
-shortname (issue #45).
+Mirrors :data:`podcast_script.config.SUPPORTED_MODELS`. When a future
+Whisper variant lands and is added to ``SUPPORTED_MODELS``, the
+maintainer probes the HF API and adds a row here in the same commit
+— see the runbook entry in ``CHANGELOG.md`` ``### Maintainer runbook``.
+"""
+
+_MLX_COMMUNITY_PREFIX = "mlx-community/whisper-"
+"""Best-effort prefix for shortnames not in :data:`_CANONICAL_MLX_REPOS`.
+
+Forward-compat fallback only — keeps the door open for a
+``--model <new-shortname>`` that landed in upstream Whisper but has not
+yet been added to the canonical table. Users hitting this branch get
+the same 404 they would have on v0.1.2 if mlx-community has not
+converted the model; intentional, since the alternative is hard-coding
+"likely" naming and silently misdirecting the download.
 """
 
 
 def _resolve_repo_id(model: str) -> str:
     """Map a Whisper shortname (``large-v3``) to its mlx-community repo id.
 
-    Idempotent: a value that already looks like a path or repo id (i.e.
-    contains ``"/"``) passes through unchanged. This keeps the door open
-    for a power-user override (``--model mlx-community/whisper-large-v3-q4``
-    or a local fine-tune path) without re-prefixing.
+    Three branches:
+
+    1. **Pass-through** for anything containing ``"/"`` — already a
+       fully-qualified HF repo id (``mlx-community/whisper-large-v3-q4``)
+       or a local filesystem path. The power-user override surface.
+    2. **Canonical table lookup** for the v1-supported shortnames in
+       :data:`_CANONICAL_MLX_REPOS`. The naming asymmetry across the
+       mlx-community org (some models ``-mlx``-suffixed, some not) is
+       too irregular for a prefix rule.
+    3. **Best-effort prefix** for unknown shortnames — same shape as
+       the v0.1.2 fallback. Forward-compat for shortnames added to
+       upstream Whisper after this release.
     """
     if "/" in model:
         return model
+    if model in _CANONICAL_MLX_REPOS:
+        return _CANONICAL_MLX_REPOS[model]
     return f"{_MLX_COMMUNITY_PREFIX}{model}"
 
 
@@ -171,13 +212,24 @@ class MlxWhisperBackend:
         """Return ``True`` if an mlx-whisper cache entry for ``model`` exists.
 
         Real path: lazy-imports ``huggingface_hub`` and scans the local
-        cache for any repo whose id ends with ``/whisper-{model}``. The
-        leading slash is load-bearing — it disambiguates ``mlx-community``
-        repos (``mlx-community/whisper-tiny``) from the faster-whisper
+        cache for any repo whose id ends with ``/<leaf>`` where
+        ``<leaf>`` is the basename of the resolved repo id from
+        :func:`_resolve_repo_id` (e.g. ``whisper-large-v3-mlx`` for
+        shortname ``large-v3``, ``whisper-large-v3-turbo`` for
+        ``large-v3-turbo``). The leading slash is load-bearing — it
+        disambiguates ``mlx-community`` repos from the faster-whisper
         siblings (``Systran/faster-whisper-tiny``) that share the same
         ``~/.cache/huggingface`` directory. Without the slash anchor,
         a faster cache entry would falsely report the mlx model as
         cached and silently suppress the AC-US-5.1 notice.
+
+        The previous v0.1.2 implementation hard-coded the anchor as
+        ``f"/whisper-{model}"`` — which silently broke for the
+        ``-mlx``-suffixed repos (``base``, ``small``, ``medium``,
+        ``large-v3``): a cache populated with
+        ``mlx-community/whisper-large-v3-mlx`` does not end with
+        ``/whisper-large-v3``, so AC-US-5.2's silence path was bypassed
+        on every warm run for those four shortnames (issue #45 v2).
 
         Override-point for unit tests — POD-030 (Tier 2, SP-6) covers
         the live HF surface on macOS CI.
@@ -195,7 +247,8 @@ class MlxWhisperBackend:
             info = scan_cache_dir()
         except Exception:
             return False
-        target = f"/whisper-{model}"
+        leaf = _resolve_repo_id(model).rsplit("/", 1)[-1]
+        target = f"/{leaf}"
         return any(repo.repo_id.endswith(target) for repo in info.repos)
 
     def _build_model(self, model: str, device: str) -> object:

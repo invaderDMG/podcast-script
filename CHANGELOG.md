@@ -33,7 +33,58 @@ major-version bump per SemVer.
 
 ## [Unreleased]
 
-_(no entries yet — post-v0.1.2 work lands here.)_
+### Fixed
+
+- **Issue #45 (re-fix)** — the v0.1.2 fix used a uniform
+  `mlx-community/whisper-{shortname}` prefix rule which still 404'd
+  on `base`, `small`, `medium`, and `large-v3` because those
+  shortnames are only published under the `-mlx` suffix
+  (`whisper-large-v3-mlx`, etc.). The naming is asymmetric across
+  the mlx-community org — `tiny` ships under both `whisper-tiny`
+  and `whisper-tiny-mlx`, `large-v3-turbo` ships only under the
+  unsuffixed `whisper-large-v3-turbo`, the rest are `-mlx`-only —
+  so a prefix rule cannot close the matrix. Replaced with an
+  explicit `_CANONICAL_MLX_REPOS` shortname → repo table verified
+  against the HuggingFace API on 2026-05-02; best-effort
+  `mlx-community/whisper-{shortname}` fallback retained for
+  unknown shortnames so future Whisper additions don't require a
+  code change in the common case
+  (`src/podcast_script/backends/mlx.py`).
+- **`MlxWhisperBackend._is_cached` cache anchor** — the v0.1.2
+  anchor `f"/whisper-{model}"` silently broke for the `-mlx`-suffixed
+  repos (`base`, `small`, `medium`, `large-v3`): a cache populated
+  with `mlx-community/whisper-large-v3-mlx` does not end with
+  `/whisper-large-v3`, so AC-US-5.2's silence path was bypassed on
+  every warm run for those four shortnames — the user got an
+  `event=model_download` notice on every invocation even though
+  the model was already on disk. Re-anchored on
+  `f"/{leaf-of-resolved-repo}"` so the cache check and the build
+  path agree on which repo backs each shortname
+  (`src/podcast_script/backends/mlx.py`).
+
+### Maintainer runbook
+
+- **After upstream Whisper adds a new shortname** that is added to
+  `config.SUPPORTED_MODELS` — probe the HuggingFace API for the
+  canonical mlx-community conversion and add a row to
+  `_CANONICAL_MLX_REPOS` in the same commit:
+
+  ```sh
+  for repo in \
+      mlx-community/whisper-<shortname> \
+      mlx-community/whisper-<shortname>-mlx; do
+      printf '%-50s %s\n' "$repo" \
+          "$(curl -s -o /dev/null -w '%{http_code}' \
+              "https://huggingface.co/api/models/${repo}")"
+  done
+  ```
+
+  The `200` row is the canonical name. If both return `200`, prefer
+  the unsuffixed form for cache continuity with prior releases
+  (per the `tiny` precedent). If neither returns `200`, the
+  shortname has not been converted to MLX format yet — do not add
+  to the table and document the gap in the README's model-size
+  table.
 
 ## [0.1.2] - 2026-05-02
 

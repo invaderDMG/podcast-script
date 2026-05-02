@@ -460,8 +460,10 @@ def test_default_is_cached_uses_huggingface_hub_scan(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Real ``_is_cached`` path: stub ``huggingface_hub.scan_cache_dir``
-    to return a synthetic cache containing ``mlx-community/whisper-large-v3``
-    and assert :meth:`_is_cached` returns ``True`` for ``large-v3`` and
+    to return a synthetic cache containing
+    ``mlx-community/whisper-large-v3-mlx`` (the actual repo backing the
+    ``large-v3`` shortname per the canonical table — issue #45 v2) and
+    assert :meth:`_is_cached` returns ``True`` for ``large-v3`` and
     ``False`` for ``tiny`` (not in the synthetic cache). The real lib is
     consulted only here — POD-030 (Tier 2) covers the live HF surface.
     """
@@ -474,7 +476,7 @@ def test_default_is_cached_uses_huggingface_hub_scan(
         def __init__(self, repos: list[_FakeRepo]) -> None:
             self.repos = repos
 
-    fake_cache = _FakeCacheInfo([_FakeRepo("mlx-community/whisper-large-v3")])
+    fake_cache = _FakeCacheInfo([_FakeRepo("mlx-community/whisper-large-v3-mlx")])
 
     import huggingface_hub
 
@@ -497,18 +499,34 @@ def test_default_is_cached_uses_huggingface_hub_scan(
         # caches even though both live under ~/.cache/huggingface.
         ("Systran/faster-whisper-tiny", "tiny", False),
         ("Systran/faster-whisper-large-v3", "large-v3", False),
-        # Canonical mlx-community repos MUST match the bare model name —
-        # this is the AC-US-5.2 silence path.
+        # Canonical mlx-community repos per the issue #45 v2 table MUST
+        # match — this is the AC-US-5.2 silence path. Anchor is the
+        # leaf of the resolved repo id, not ``whisper-{shortname}``,
+        # because the v0.1.2 fix's ``/whisper-{model}`` rule failed to
+        # match the actual ``-mlx``-suffixed repos for `base`, `small`,
+        # `medium`, `large-v3` (ref CHANGELOG `[0.1.3]`).
         ("mlx-community/whisper-tiny", "tiny", True),
-        ("mlx-community/whisper-large-v3", "large-v3", True),
+        ("mlx-community/whisper-base-mlx", "base", True),
+        ("mlx-community/whisper-small-mlx", "small", True),
+        ("mlx-community/whisper-medium-mlx", "medium", True),
+        ("mlx-community/whisper-large-v3-mlx", "large-v3", True),
         ("mlx-community/whisper-large-v3-turbo", "large-v3-turbo", True),
-        # Owner forks of an mlx-community model MUST also match (any
-        # owner/<...>/whisper-{model} suffix is valid).
-        ("some-fork/whisper-large-v3", "large-v3", True),
-        # Bare model requested, only a quantised variant cached: the
-        # bare model is genuinely missing on disk so the notice MUST
-        # fire — anchoring on ``/whisper-{model}`` keeps this False.
+        # The wrong-name v0.1.2 cache shape MUST NOT match anymore —
+        # ``mlx-community/whisper-large-v3`` doesn't actually exist on
+        # HF, but if a user manually populated a cache entry under
+        # that name (e.g. mid-failed-download from v0.1.2), it should
+        # not silently satisfy the AC-US-5.2 silence path for the now
+        # correctly-resolved ``-mlx`` repo.
+        ("mlx-community/whisper-large-v3", "large-v3", False),
+        # Owner forks of an mlx-community repo MUST also match the
+        # canonical leaf — the ``-mlx`` suffix is part of the actual
+        # repo name, not a synthesised tag.
+        ("some-fork/whisper-large-v3-mlx", "large-v3", True),
+        # Bare shortname requested, only a quantised variant cached:
+        # the canonical repo is genuinely missing on disk so the
+        # notice MUST fire — leaf anchor keeps this False.
         ("mlx-community/whisper-tiny-q4", "tiny", False),
+        ("mlx-community/whisper-large-v3-mlx-q4", "large-v3", False),
     ],
 )
 def test_default_is_cached_anchors_match_on_end_of_repo_id(
@@ -519,9 +537,12 @@ def test_default_is_cached_anchors_match_on_end_of_repo_id(
 ) -> None:
     """Same anchor-on-end discipline as faster's ``_is_cached`` (ref:
     PR #12 review): a substring match would let the faster-whisper repos
-    falsely report their mlx counterparts as cached. Anchoring on the
-    full ``/whisper-{model}`` suffix disambiguates the two backends'
-    caches sharing ``~/.cache/huggingface``.
+    falsely report their mlx counterparts as cached. The leaf anchor
+    (``f"/{leaf-of-resolved-repo}"``) disambiguates the two backends'
+    caches sharing ``~/.cache/huggingface`` AND covers the issue #45 v2
+    naming asymmetry — ``base``/``small``/``medium``/``large-v3`` cache
+    under ``-mlx``-suffixed leaves, ``tiny``/``large-v3-turbo`` under
+    bare leaves.
     """
 
     class _FakeRepo:
@@ -570,20 +591,36 @@ def test_default_is_cached_returns_false_when_scan_fails(
 @pytest.mark.parametrize(
     ("model", "expected"),
     [
+        # Canonical mapping — verified against
+        # ``https://huggingface.co/api/models/<repo>`` on 2026-05-02.
+        # The mlx-community org applies the ``-mlx`` suffix
+        # asymmetrically: ``tiny`` exists under both `whisper-tiny` and
+        # `whisper-tiny-mlx`, ``large-v3-turbo`` ships only without the
+        # suffix, the rest are ``-mlx``-only. The v0.1.2 prefix-rule
+        # fix 404'd on `base`, `small`, `medium`, `large-v3`; the
+        # inverse rule would 404 on `large-v3-turbo` (issue #45 v2).
         ("tiny", "mlx-community/whisper-tiny"),
-        ("base", "mlx-community/whisper-base"),
-        ("small", "mlx-community/whisper-small"),
-        ("medium", "mlx-community/whisper-medium"),
-        ("large-v3", "mlx-community/whisper-large-v3"),
+        ("base", "mlx-community/whisper-base-mlx"),
+        ("small", "mlx-community/whisper-small-mlx"),
+        ("medium", "mlx-community/whisper-medium-mlx"),
+        ("large-v3", "mlx-community/whisper-large-v3-mlx"),
         ("large-v3-turbo", "mlx-community/whisper-large-v3-turbo"),
-        # Idempotent on already-prefixed repo ids — keeps the door open
-        # for power-user overrides (community quants, local fine-tunes)
-        # without re-prefixing.
-        ("mlx-community/whisper-large-v3", "mlx-community/whisper-large-v3"),
+        # Idempotent on already-qualified repo ids — keeps the door
+        # open for power-user overrides (community quants, local
+        # fine-tunes) without re-prefixing.
+        ("mlx-community/whisper-large-v3-mlx", "mlx-community/whisper-large-v3-mlx"),
         ("mlx-community/whisper-large-v3-q4", "mlx-community/whisper-large-v3-q4"),
         ("some-fork/whisper-tiny", "some-fork/whisper-tiny"),
         # Local filesystem path passes through (any ``/`` short-circuits).
         ("/tmp/whisper-fine-tune", "/tmp/whisper-fine-tune"),
+        # Forward-compat fallback for shortnames not in the canonical
+        # table — preserves the v0.1.2 ``mlx-community/whisper-{model}``
+        # shape so a future Whisper variant added to upstream can be
+        # tried without a code change. Best-effort only; if the org
+        # has not converted that variant yet the user gets the same
+        # 404 as v0.1.2 (intentional — alternative is silent
+        # misdirection).
+        ("v4-experimental", "mlx-community/whisper-v4-experimental"),
     ],
 )
 def test_resolve_repo_id_maps_bare_shortname_to_mlx_community_issue_45(
@@ -593,10 +630,11 @@ def test_resolve_repo_id_maps_bare_shortname_to_mlx_community_issue_45(
     local path or a fully-qualified HF repo id — bare shortnames like
     ``"large-v3"`` 404 with ``RepositoryNotFoundError: 401 …``. The
     backend's ``_build_model`` MUST normalise via :func:`_resolve_repo_id`
-    so the user-facing ``--model large-v3`` shortname resolves to the
-    canonical ``mlx-community/whisper-large-v3`` HF repo before the
-    download path runs. Anything containing ``"/"`` (already-qualified
-    repo id, local path) passes through unchanged.
+    using the explicit canonical-table for v1-supported shortnames
+    (the ``-mlx`` suffix is not uniform across mlx-community), with a
+    best-effort prefix fallback for forward-compat. Anything containing
+    ``"/"`` (already-qualified repo id, local path) passes through
+    unchanged.
     """
     assert _resolve_repo_id(model) == expected
 
@@ -623,8 +661,8 @@ def test_load_passes_resolved_repo_id_to_build_model_issue_45() -> None:
     backend = _CapturingBackend()
     backend.load(model="large-v3", device="cpu")
 
-    assert captured == ["mlx-community/whisper-large-v3"]
-    assert backend._model_name == "mlx-community/whisper-large-v3", (
+    assert captured == ["mlx-community/whisper-large-v3-mlx"]
+    assert backend._model_name == "mlx-community/whisper-large-v3-mlx", (
         "_model_name must store the resolved repo id so _run_inference's "
         "path_or_hf_repo arg targets the actual HF repo, not the bare shortname"
     )

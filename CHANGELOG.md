@@ -46,7 +46,7 @@ major-version bump per SemVer.
   reflected as pass/fail, and a copy-paste-ready DM template the
   maintainer can use to invite people. README has a one-paragraph
   pointer between "Development" and "License" so an invited dogfooder
-  who lands on the README first finds the guide (PR #TBD).
+  who lands on the README first finds the guide (PR #42).
 
 ## [0.1.0] - 2026-05-02
 

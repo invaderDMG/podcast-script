@@ -1,6 +1,6 @@
-# Dogfooding `podcast-script` v0.1.0
+# Dogfooding `podcast-script` v0.1.1
 
-You've been invited to test `v0.1.0` ahead of the `v1.0.0` release. This
+You've been invited to test `v0.1.1` ahead of the `v1.0.0` release. This
 guide walks you through what's being asked, what the success bar looks
 like, and how to file feedback that actually moves the project forward.
 
@@ -23,7 +23,7 @@ need to DM the maintainer to make the tool work, that's a doc bug.
   10–30 minute MP3 / audio file from a podcast you've worked on.
 - **Where feedback goes.** GitHub Issues — `https://github.com/invaderDMG/podcast-script/issues`. No DMs, no email, no
   surveys (per `PROJECT_BRIEF.md` §17).
-- **Your tag is `v0.1.0`.** Not `main`. Pinning to the tag means
+- **Your tag is `v0.1.1`.** Not `main`. Pinning to the tag means
   every dogfooder is testing the exact same surface and your feedback
   is comparable.
 
@@ -78,10 +78,10 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 brew install ffmpeg              # macOS
 sudo apt-get install ffmpeg      # Debian / Ubuntu
 
-# (3) the project itself. Pin to v0.1.0 — not main.
+# (3) the project itself. Pin to v0.1.1 — not main.
 git clone https://github.com/invaderDMG/podcast-script.git
 cd podcast-script
-git checkout v0.1.0              # important — pin the surface
+git checkout v0.1.1              # important — pin the surface
 uv sync                          # creates .venv with locked deps
 ```
 
@@ -260,7 +260,7 @@ For anything that crashed or misbehaved, include:
 - Python: <output of `python3 --version`>
 - uv: <output of `uv --version`>
 - ffmpeg: <output of `ffmpeg -version | head -1`>
-- Project version: v0.1.0 (commit <output of `git rev-parse HEAD`>)
+- Project version: v0.1.1 (commit <output of `git rev-parse HEAD`>)
 
 ## Reproduction
 The exact CLI invocation:
@@ -347,7 +347,7 @@ Per `PROJECT_PLAN.md` §8, the dogfooder phase passes when *"at least
 one external dogfooder has run the quickstart end-to-end without
 help, before the v1.0.0 tag"*. Concretely:
 
-- ✅ **Pass:** you cloned the repo at `v0.1.0`, ran `uv sync`, ran
+- ✅ **Pass:** you cloned the repo at `v0.1.1`, ran `uv sync`, ran
   the quickstart on your own audio, got a transcript out, and filed
   at least one issue (positive or negative). You did this without
   needing to DM the maintainer.
@@ -397,7 +397,7 @@ If you (the maintainer) are reading this, here's a copy-paste-ready
 DM for inviting a dogfooder. Replace `{NAME}` with their name and
 adjust as needed:
 
-> Hey {NAME} — I just shipped `v0.1.0` of a small CLI tool I've been
+> Hey {NAME} — I just shipped `v0.1.1` of a small CLI tool I've been
 > building, `podcast-script`. It segments podcast audio into speech
 > vs. music regions and runs Whisper only on the speech (so no
 > hallucinated "lyrics" over your music beds). I'm looking for one
@@ -409,8 +409,8 @@ adjust as needed:
 > found.
 >
 > Repo + dogfooder guide:
-> https://github.com/invaderDMG/podcast-script/blob/v0.1.0/docs/DOGFOODING.md
+> https://github.com/invaderDMG/podcast-script/blob/v0.1.1/docs/DOGFOODING.md
 >
-> Pin to the `v0.1.0` tag so everyone's testing the same surface.
+> Pin to the `v0.1.1` tag so everyone's testing the same surface.
 > No worries if it's not your week — saying so is more useful than
 > committing and ghosting.

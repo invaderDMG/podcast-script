@@ -33,6 +33,20 @@ major-version bump per SemVer.
 
 ## [Unreleased]
 
+_(no entries yet — post-v0.1.1 work lands here.)_
+
+## [0.1.1] - 2026-05-02
+
+Patch release per SemVer 2.0.0 §4. No API changes; delta is the
+four PRs merged between v0.1.0 and v0.1.1: dogfooding guide,
+Dependabot action bumps, and Dependabot config tightening to
+prevent the closed PR #36's proposal class from recurring. The
+five `SRS.md` §16.1 contracts (output Markdown shape, 8-code
+`--lang` set, exit codes, logfmt format + 22-token catalogue, CLI
+grammar) are untouched. Cut to give invited dogfooders a real
+pinned tag with `docs/DOGFOODING.md` included — the v0.1.0 tag
+predates the guide.
+
 ### Added
 
 - `docs/DOGFOODING.md` — invitation guide for the v0.1.0 → v1.0.0
@@ -476,6 +490,14 @@ happen.
   variance record. v1.0.0 tag (POD-040) is still gated on
   dogfooder feedback per Q7 — the calendar acceleration does not
   shorten the human review window.
+- **v0.1.1 — actual 2026-05-02; not projected.** Same-day patch
+  release after v0.1.0; the §7 calendar table doesn't enumerate
+  patch tags (only major sprint milestones M-1..M-8), so this is a
+  no-projection variance — recorded for completeness rather than
+  schedule analysis. Cut to bundle the dogfooding guide
+  (PR #42) + Dependabot triage (#34, #35, #41) into a tag the
+  guide URL actually resolves under, since the v0.1.0 tag predates
+  the guide commit. No CI gate change vs. v0.1.0.
 
 ### Risk-register churn
 

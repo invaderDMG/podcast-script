@@ -13,7 +13,7 @@ dependencies = [
     # (.github/dependabot.yml) brings minor + patch bumps under the cap;
     # major bumps stay individual review per the cap shape.
     "faster-whisper>=1.2,<2.0",
-    "huggingface_hub>=1.12,<2.0",
+    "huggingface_hub>=1.12,<3.0",
     "inaspeechsegmenter==0.7.6",
     # mlx-whisper is in 0.x — SemVer treats 0.x minors as breakable, so
     # the symmetric "next breakable bump" cap is <0.5, not <1.0. Tighter
